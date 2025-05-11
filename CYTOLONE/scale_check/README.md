@@ -3,7 +3,7 @@
   <img src="./assets/scale_check.png" alt="Scale Check" width="60%">
 </div>
 
-|[日本語](/README_JA.md)|
+|[日本語](./README_JA.md)|
 
 ## ✨ Overview
 - Scale Checker is a tool designed to **visually check and adjust scale differences** between training images and camera-captured images when using CYTOLONE.
