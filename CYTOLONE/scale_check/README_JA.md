@@ -55,5 +55,5 @@ iPhone 15と[i-NTER LENS](https://www.microscope-net.com/products/smartphone/int
        > 📐 Cropped size: 890×890px  
        > 📷 Recommended original image size: 1177×1177px  
        > ```bash
-       > cytolone-config --DEBUG False --WEBCAM_IMAGE_SIZE 1177
+       > cytolone-config --WEBCAM_IMAGE_SIZE 1177
        > ```
