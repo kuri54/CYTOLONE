@@ -1,19 +1,13 @@
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_logo.png">
-  <img alt="cytolone logo" src="/assets/cytolone_logo.png" width="80%" height="80%">
-</picture> 
-</div>
-
-<div align="center">
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_face.png">
-  <img alt="cytolone face" src="/assets/cytolone_face.png" width="30%" height="30%">
+  <img alt="cytolone logo" src="/assets/cytolone_logo.jpg" width="80%" height="80%">
 </picture> 
 
 _**"Always by you side."**_
-
+  
 </div>
+
+<br>
 
 ## ✨ 概要
 CYTOLONEは、顕微鏡とAIをリアルタイムで連携させることで、**細胞検査士による子宮頸部細胞診のスクリーニングを支援するツール**です。  
