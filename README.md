@@ -57,7 +57,7 @@ Below is an example image used in the study:
     - Connect your iPhone to the microscope using an adapter.
  
 <div align="center">
-  <img src="/assets/setup.png" alt="Setup" width="60%">
+  <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
 
 1. **Install Python**
