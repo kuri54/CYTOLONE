@@ -1,4 +1,3 @@
-# CYTOLONE
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_logo.png">
@@ -125,7 +124,7 @@ CYTOLONEは、顕微鏡とAIをリアルタイムで連携させることで、*
       - `WEBCAM_IMAGE_SIZE`  
          📢 Important:  
          > `WEBCAM_IMAGE_SIZE`はこのアプリで最も重要な設定です。  
-         > 設定方法は[こちらの手順]()を確認してください。  
+         > 設定方法は[こちらの手順](/CYTOLONE/scale_check/README_JA.md)を確認してください。  
 
     <br>
 
