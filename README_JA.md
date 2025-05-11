@@ -55,7 +55,7 @@ CYTOLONEは、顕微鏡とAIをリアルタイムで連携させることで、*
     - iPhoneと顕微鏡をアダプターで接続する。
 
 <div align="center">
-  <img src="/assets/setup.png" alt="Setup" width="60%">
+  <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
 
 1. **Pythonのインストール**
