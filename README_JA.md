@@ -1,12 +1,14 @@
 # CYTOLONE
 <div align="center">
-
 <picture>
-  <img alt="cytolone logo" src="/assets/cytolone_logo.png" width="30%" height="30%">
+  <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_logo.png">
+  <img alt="cytolone logo" src="/assets/cytolone_logo.png" width="80%" height="80%">
 </picture> 
+</div>
 
-
+<div align="center">
 <picture>
+  <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_face.png">
   <img alt="cytolone face" src="/assets/cytolone_face.png" width="30%" height="30%">
 </picture> 
 
