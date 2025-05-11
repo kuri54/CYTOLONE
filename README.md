@@ -1,4 +1,3 @@
-# CYTOLONE
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="/assets/cytolone_logo.png">
@@ -16,7 +15,7 @@ _**"Always by you side."**_
 
 </div>
 
-|[日本語]()|
+|[日本語](./README_JA.md)|
 
 ## ✨ Overview
 CYTOLONE is a real-time AI-powered support tool for **cytotechnologists in cervical cytology**.  
@@ -128,7 +127,7 @@ Below is an example image used in the study:
     - `WEBCAM_IMAGE_SIZE`  
        📢 Important:  
        > `WEBCAM_IMAGE_SIZE` is the **most critical setting** in this app.  
-       > Please check [this guide]() for details.  
+       > Please check [this guide](/CYTOLONE/scale_check/README.md) for details.  
 
     <br>
 
