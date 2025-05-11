@@ -27,8 +27,10 @@ CYTOLONEは、顕微鏡とAIをリアルタイムで連携させることで、*
   <img src="/assets/sample_study_image.png" alt="Example Study Image" width="60%">
 </div>
 
+<br>
+
 <div align="center">
-  <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="60%">
+  <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="100%">
 </div>
 
 ## 🤩 アップデート履歴
