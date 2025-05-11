@@ -29,8 +29,10 @@ Below is an example image used in the study:
   <img src="/assets/sample_study_image.png" alt="Example Study Image" width="60%">
 </div>
 
+<br>
+
 <div align="center">
-  <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="60%">
+  <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="100%">
 </div>
 
 ## 🤩 Update History
