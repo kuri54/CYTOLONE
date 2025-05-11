@@ -1,6 +1,6 @@
 # Scale Checker
 <div align="center">
-  <img src="/assets/scale_check.png" alt="Scale Check" width="60%">
+  <img src="./assets/scale_check.png" alt="Scale Check" width="60%">
 </div>
 
 ## ✨ 概要
@@ -18,7 +18,7 @@
 <div align="center">
 
 <picture>
-  <img alt="scale" src="/assets/scale.jpg" width="30%" height="30%">
+  <img alt="scale" src="./assets/scale.jpg" width="80%" height="80%">
 </picture> 
 
 </div>
@@ -36,7 +36,6 @@ iPhone 15と[i-NTER LENS](https://www.microscope-net.com/products/smartphone/int
     scale-check
     ```
     ターミナルに表示されたURLにWebブラウザからアクセスしてください。  
-    動画？
 
 - 操作手順
     1. 基準画像（Reference Image）を選択
