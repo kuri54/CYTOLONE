@@ -50,7 +50,7 @@ Below is an example image used in the study:
 ### 💻 Setup
 0. **Preparation**
     - Prepare an Apple Silicon Mac and iPhone, and log in with the **same Apple ID**.  
-    - Connect your Mac and iPhone using a **USB-C cable (or Thunderbolt cable) **.  
+    - Connect your Mac and iPhone using a **USB-C cable** (**or Thunderbolt cable**) .  
     📝 Note:  
       > Bluetooth is supported, but **a wired connection is recommended for  better stability**.  
     - Connect your iPhone to the microscope using an adapter.
