@@ -12,7 +12,7 @@ _**"Always by you side."**_
 |[日本語](./README_JA.md)|
 
 ## ✨ Overview
-CYTOLONE is a real-time AI-powered support tool for **cytotechnologists in cervical cytology**.  
+**CYTOLONE** (Cytology All-in-One) is a real-time AI-powered support tool for **cytotechnologists in cervical cytology**.  
 Unlike conventional AI systems that require **whole slide imaging (WSI)**, CYTOLONE operates **without WSI**, enabling **low-cost and high-speed AI support** using just an iPhone and an Apple Silicon Mac.
 
 Key Features:
