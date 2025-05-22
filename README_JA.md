@@ -176,6 +176,16 @@ _**"Always by you side."**_
 ⚠️ Warning:  
 > 写真を撮る際の対物レンズは必ず×10にしてください。それ以外の倍率には対応していません。  
 
+## 🔭 今後の開発計画
+以下の機能を今後のアップデートで追加予定です：
+
+- **赤丸による注視領域の指定機能**  
+  画像上の任意の部位に赤丸をつけることで、モデルがその領域に注目して判定を行います。  
+  _参考論文_: [What does CLIP know about a red circle? Visual prompt engineering for VLMs](https://arxiv.org/pdf/2304.06712)
+
+- **スクリーニングモード**  
+  このモードをONにすると、顕微鏡観察中に常時「Anomaly」カテゴリの判定を自動実行します。  
+
 ## 🎉 Citation
 ```
 @article{kurita2025cytolone,
