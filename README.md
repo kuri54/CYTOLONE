@@ -179,7 +179,17 @@ Click the red button to connect to your iPhone.
 
 ⚠️ Warning:  
 > Make sure to use the x10 objective lens when taking photos.  
-> Other magnifications are not supported.
+> Other magnifications are not supported.  
+
+## 🔭 Planned Features
+The following features are planned for future updates:
+
+- **Region-of-Interest Highlighting with Red Circles**  
+  Users will be able to place a red circle on any part of the image to prompt the model to focus on that specific area during evaluation.  
+  _Reference_: [What does CLIP know about a red circle? Visual prompt engineering for VLMs](https://arxiv.org/pdf/2304.06712)
+
+- **Screening Mode**  
+  When enabled, this mode will continuously evaluate the "Anomaly" category in real time during microscopic observation.  
 
 ## 🎉 Citation
 ```
