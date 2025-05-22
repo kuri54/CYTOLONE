@@ -13,7 +13,7 @@ install_requires = [
 
 setup(
     name="CYTOLONE",
-    version="0.0.1",
+    version="1.0.0",
     packages=find_packages(),
     install_requires=install_requires,
     entry_points={
