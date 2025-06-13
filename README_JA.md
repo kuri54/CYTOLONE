@@ -20,7 +20,7 @@ _**"Always by you side."**_
 - **LLM（大規模言語モデル）による所見生成（オプション）**
 
 詳細は論文をご参照ください：  
-[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)]()
+[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
 
 下図は実際の研究で使用した画像例です：
 <div align="center">
@@ -193,6 +193,6 @@ _**"Always by you side."**_
          author={Yuki Kurita et al.},
          year={2025},
          journal={Modern Pathology},
-         doi={}
+         doi={10.1016/j.modpat.2025.100817}
 }
 ```
