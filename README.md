@@ -22,7 +22,7 @@ Key Features:
 - **Optional LLM-based findings generation**
 
 For more details, see the published paper:  
-[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)]()
+[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
 
 Below is an example image used in the study:
 <div align="center">
@@ -198,6 +198,6 @@ The following features are planned for future updates:
          author={Yuki Kurita et al.},
          year={2025},
          journal={Modern Pathology},
-         doi={}
+         doi={10.1016/j.modpat.2025.100817}
 }
 ```
