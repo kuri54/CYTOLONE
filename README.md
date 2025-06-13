@@ -36,7 +36,9 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
-- hoge
+- **2025/06/13**
+  - Public release of this page
+  - Publication of the research paper in *Modern Pathology*
 
 
 ## 💡 Usage
