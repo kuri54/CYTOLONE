@@ -1,0 +1,27 @@
+[project]
+name = "CYTOLONE"
+version = "1.0.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "accelerate>=1.6.0",
+    "gradio>=5.29.0",
+    "mlx_lm>=0.24.0",
+    "numpy>=2.2.5",
+    "pillow>=11.2.1",
+    "pyyaml>=6.0.2",
+    "transformers>=4.51.3",
+    "torch==2.3.0",
+]
+
+[project.scripts]
+cytolone = "CYTOLONE.app:run"
+cytolone-config = "CYTOLONE.default_config.config_manager:main"
+scale-check = "CYTOLONE.scale_check.scale_checker:run"
+download-model = "CYTOLONE.download_models:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["CYTOLONE", "CYTOLONE.*"]
+
+[tool.uv]
+package = true
