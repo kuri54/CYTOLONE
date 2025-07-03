@@ -34,6 +34,10 @@ _**"Always by you side."**_
 </div>
 
 ## 🤩 アップデート履歴
+- **2025年7月3日**
+  - セットアップ関係をアップデート
+  - uvのスクリプト実行に対応
+
 - **2025年6月13日**
   - ページを公開しました
   - 論文が *Modern Pathology* に掲載されました
@@ -67,6 +71,11 @@ _**"Always by you side."**_
     brew install python@3.12
     ```
 
+    **For [uv](https://github.com/astral-sh/uv) users:**
+    ```bash
+    uv python install 3.12
+    ```
+
 2. **Installation**:
     - リポジトリをcloneする
      
@@ -90,6 +99,9 @@ _**"Always by you side."**_
       ```bash
       pip install -e .
       ```
+
+      **For uv users:**
+      このセクションは不要です。依存関係をインストール後、次のステップ3へ進んでください。
 
 3. **アプリの設定**
     - デフォルト設定

@@ -36,6 +36,10 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
+- **2025/07/03**
+  - Migrated setup from `setup.py` to `pyproject.toml`
+  - Added support for `uv` script execution
+
 - **2025/06/13**
   - Public release of this page
   - Publication of the research paper in *Modern Pathology*
@@ -69,6 +73,11 @@ Below is an example image used in the study:
     brew install python@3.12
     ```
 
+    **For [uv](https://github.com/astral-sh/uv) users:**
+    ```bash
+    uv python install 3.12
+    ```
+
 2. **Installation**:
     - Clone this repository.
      
@@ -92,6 +101,9 @@ Below is an example image used in the study:
       ```bash
       pip install -e .
       ```
+
+    **For uv users:**
+    This section is unnecessary. After installing dependencies, proceed to step 3.
 
 3. **App Settings**
     - Default settings:
