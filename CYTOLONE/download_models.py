@@ -11,7 +11,7 @@ def download_and_flatten(model_id: str, base_output_dir: Path):
     snapshot_path = Path(snapshot_download(
         repo_id=model_id,
         local_files_only=False,
-        resume_download=True
+        # resume_download=True
     ))
 
     dest_dir = base_output_dir / model_id

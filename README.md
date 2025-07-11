@@ -36,6 +36,11 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
+- **2025/07/10**
+  - Released CYTOLONE-v1.1!
+  - Improved performance over v1.0, especially on Bethesda and Diagnosis tasks
+  - See the Model Card for details: https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1
+
 - **2025/07/03**
   - Migrated setup from `setup.py` to `pyproject.toml`
   - Added support for `uv` script execution
@@ -86,6 +91,12 @@ Below is an example image used in the study:
       cd CYTOLONE
       ```
 
+    📝 Note:
+    > **For uv users:**
+    This section is unnecessary. Install dependencies with `uv sync`, then proceed to step 3.
+
+    <br>
+
     - Create and activate a virtual environment:
       ```bash
       python3.12 -m venv venv
@@ -102,13 +113,13 @@ Below is an example image used in the study:
       pip install -e .
       ```
 
-    **For uv users:**
-    This section is unnecessary. After installing dependencies, proceed to step 3.
+
 
 3. **App Settings**
     - Default settings:
       ```
       LANGUAGE = en --------------- App language setting (en or ja)
+      MODEL = v1.1 ---------------- Model version to use (choose v1.0 or v1.1)
       LLM_GEN = False ------------- Enable or disable LLM-based findings generation
       LLM_GEN_THRESHOLD = 0.8 ----- Threshold for enabling LLM output
       WEBCAM_IMAGE_SIZE = 1024 ---- Webcam input image size

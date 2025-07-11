@@ -34,6 +34,11 @@ _**"Always by you side."**_
 </div>
 
 ## 🤩 アップデート履歴
+- **2025年7月10日**
+  - CYTOLONE-v1.1 をリリース！
+  - v1.0 と比較して、特に Bethesda／Diagnosis タスクの性能を向上
+  - 詳細は Model Card をご覧ください：https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1
+
 - **2025年7月3日**
   - セットアップ関係をアップデート
   - uvのスクリプト実行に対応
@@ -84,6 +89,12 @@ _**"Always by you side."**_
       cd CYTOLONE
       ```
 
+    📝 Note:
+    > **For uv users:**
+    このセクションは不要です。`uv sync`で依存関係をインストール後、次のステップ3へ進んでください。
+
+    <br>
+
     - 仮想環境の構築
         ```bash
         python3.12 -m venv venv
@@ -100,13 +111,13 @@ _**"Always by you side."**_
       pip install -e .
       ```
 
-      **For uv users:**
-      このセクションは不要です。依存関係をインストール後、次のステップ3へ進んでください。
+
 
 3. **アプリの設定**
     - デフォルト設定
         ```
         LANGUAGE = en --------------- アプリの言語設定 (en or ja)
+        MODEL = v1.1 ---------------- 使用するモデルのバージョン（v1.0 または v1.1）
         LLM_GEN = False ------------- LLMによる鑑別所見出力の有無
         LLM_GEN_THRESHOLD = 0.8 ----- LLM出力を有効にする閾値
         WEBCAM_IMAGE_SIZE = 1024 ---- webcam入力画像サイズ
