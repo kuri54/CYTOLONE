@@ -35,7 +35,7 @@ _**"Always by you side."**_
 
 ## 🤩 アップデート履歴
 - **2025年9月3日**
-  - CYTOLONE-v1.1 をリリース！
+  - CYTOLONE-v1.1.1 をリリース！
   - LLMの選択に対応しました！  
     利用可能なLLMは`DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit`、`gpt-oss-120b-MXFP4-Q4`、`gpt-oss-20b-MXFP4-Q8`のMLXバージョンです。
   - UIを更新しました。
