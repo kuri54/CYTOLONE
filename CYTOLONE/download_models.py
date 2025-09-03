@@ -35,7 +35,7 @@ def main():
     download_and_flatten(model_id, output_root)
 
     if llm_gen:
-        llm_id = get_llm_id()
+        llm_id = get_llm_id(config["LLM_MODEL"])
         download_and_flatten(llm_id, output_root)
 
 if __name__ == "__main__":

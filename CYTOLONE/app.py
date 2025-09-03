@@ -17,7 +17,7 @@ from CYTOLONE.label_caption import (
 
 from CYTOLONE.model import get_model_id, get_llm_id
 
-from CYTOLONE.util import load_config
+from CYTOLONE.util import load_config, build_config_df
 
 model_cache = {}
 processor_cache = {}
@@ -53,10 +53,18 @@ def split_by_three_spaces(predict_label, order_type, order):
     return parts[target_index]
 
 def clean_llm_output(text):
-    cleaned_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    cleaned_text = re.sub(r"\n\s*\n", "\n\n", cleaned_text)
+    text = text.replace("\r\n", "\n")
 
-    return cleaned_text.strip()
+    # 1) 「<|channel|>final<|message|>」以降だけを残す
+    if "<|channel|>final<|message|>" in text:
+        text = text.split("<|channel|>final<|message|>", 1)[1]
+
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<\|channel\|>[^<]*<\|message\|>", "", text)
+    text = re.sub(r"<\|[^|]+\|>", "", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+
+    return text.strip()
 
 def center_crop(image, size=1024):
     if isinstance(image["composite"], np.ndarray):
@@ -130,7 +138,7 @@ def generate_comments(choice_caption, label_probs, specimen, config):
     if not (top_labels[0][1] < 0.8 and len(top_labels) > 1 and order_type == "Diagnosis"):
         return " "
 
-    llm_model_path = get_llm_id()
+    llm_model_path = get_llm_id(config["LLM_MODEL"])
 
     if llm_model_path not in llm_model_cache:
         model, tokenizer = load(f"mlx_models/{llm_model_path}")
@@ -184,33 +192,43 @@ def run():
 
         # 入力セクション
         with gr.Row():
-            question_selector = gr.Dropdown(
-                question,
-                label="Question Type",
-                scale=1
+            with gr.Column():
+                question_selector = gr.Dropdown(
+                    question,
+                    label="Question Type",
+                    scale=1
+                    )
+
+                gr.Dataframe(
+                    value = build_config_df(config),
+                    interactive = False,
+                    row_count = (1, "dynamic"),
+                    col_count = (3, "fixed"),
+                    label = "Settings"
                 )
 
-            image_input = gr.ImageEditor(
-                type="pil",
-                image_mode="RGB",
-                height=500,
-                width=500,
-                canvas_size=(
-                    config["WEBCAM_IMAGE_SIZE"],
-                    config["WEBCAM_IMAGE_SIZE"]
-                    ),
-                fixed_canvas=True,
-                webcam_options=gr.WebcamOptions(
-                    constraints={"video": {
-                        "width": config["WEBCAM_IMAGE_SIZE"],
-                        "height": config["WEBCAM_IMAGE_SIZE"]
-                        }},
-                    mirror=False),
-                sources=["webcam", "upload"],
-                eraser=False,
-                brush=False,
-                layers=False
-            )
+            with gr.Column():
+                image_input = gr.ImageEditor(
+                    type="pil",
+                    image_mode="RGB",
+                    height=500,
+                    width=500,
+                    canvas_size=(
+                        config["WEBCAM_IMAGE_SIZE"],
+                        config["WEBCAM_IMAGE_SIZE"]
+                        ),
+                    fixed_canvas=True,
+                    webcam_options=gr.WebcamOptions(
+                        constraints={"video": {
+                            "width": config["WEBCAM_IMAGE_SIZE"],
+                            "height": config["WEBCAM_IMAGE_SIZE"]
+                            }},
+                        mirror=False),
+                    sources=["webcam", "upload"],
+                    eraser=False,
+                    brush=False,
+                    layers=False
+                )
 
         submit_btn = gr.Button("Analyze", variant="primary")
 

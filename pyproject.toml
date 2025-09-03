@@ -4,13 +4,14 @@ version = "1.1.0"
 requires-python = "==3.12.*"
 dependencies = [
     "accelerate>=1.6.0",
-    "mlx_lm>=0.24.0",
     "numpy>=2.2.5",
     "pillow>=11.2.1",
     "pyyaml>=6.0.2",
     "transformers>=4.51.3",
     "torch==2.3.0",
-    "gradio==5.35.0",
+    "gradio>=5.37.0",
+    "mlx>=0.27.1",
+    "mlx-lm>=0.26.4",
 ]
 
 [project.scripts]
