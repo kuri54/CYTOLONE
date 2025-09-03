@@ -36,7 +36,13 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
-- **2025/07/10**
+- **2025/09/10**
+  - Released CYTOLONE-v1.1.1!
+  - LLM selection is now supported!  
+    Available LLMs: MLX versions of `DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit`, `gpt-oss-120b-MXFP4-Q4`, and `gpt-oss-20b-MXFP4-Q8`.
+  - UI updated.
+
+- **2025/07/03**
   - Released CYTOLONE-v1.1!
   - Improved performance over v1.0, especially on Bethesda and Diagnosis tasks
   - See the Model Card for details: https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1
@@ -120,6 +126,7 @@ Below is an example image used in the study:
       ```
       LANGUAGE = en --------------- App language setting (en or ja)
       MODEL = v1.1 ---------------- Model version to use (choose v1.0 or v1.1)
+      LLM_MODEL = gpt-oss-20b ----- LLM to use (choose deepseek-r1 or gpt-oss-120b or gpt-oss-20b)
       LLM_GEN = False ------------- Enable or disable LLM-based findings generation
       LLM_GEN_THRESHOLD = 0.8 ----- Threshold for enabling LLM output
       WEBCAM_IMAGE_SIZE = 1024 ---- Webcam input image size
@@ -166,7 +173,10 @@ Below is an example image used in the study:
 
       Download links:  
       [kuri54/mlx-CYTOLONE-v1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1)  
-      [mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)
+      [kuri54/mlx-CYTOLONE-v1.1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1)  
+      [mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)  
+      [mlx-community/gpt-oss-120b-MXFP4-Q4](https://huggingface.co/mlx-community/gpt-oss-120b-MXFP4-Q4)  
+      [mlx-community/gpt-oss-20b-MXFP4-Q8](https://huggingface.co/mlx-community/gpt-oss-20b-MXFP4-Q8)  
 
       Place the models in the following directories:  
       ```

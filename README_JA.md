@@ -34,6 +34,12 @@ _**"Always by you side."**_
 </div>
 
 ## 🤩 アップデート履歴
+- **2025年9月3日**
+  - CYTOLONE-v1.1 をリリース！
+  - LLMの選択に対応しました！  
+    利用可能なLLMは`DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit`、`gpt-oss-120b-MXFP4-Q4`、`gpt-oss-20b-MXFP4-Q8`のMLXバージョンです。
+  - UIを更新しました。
+
 - **2025年7月10日**
   - CYTOLONE-v1.1 をリリース！
   - v1.0 と比較して、特に Bethesda／Diagnosis タスクの性能を向上
@@ -118,6 +124,7 @@ _**"Always by you side."**_
         ```
         LANGUAGE = en --------------- アプリの言語設定 (en or ja)
         MODEL = v1.1 ---------------- 使用するモデルのバージョン（v1.0 または v1.1）
+        LLM_MODEL = gpt-oss-20b ----- 使用するLLM (deepseek-r1 or gpt-oss-120b or gpt-oss-20b)
         LLM_GEN = False ------------- LLMによる鑑別所見出力の有無
         LLM_GEN_THRESHOLD = 0.8 ----- LLM出力を有効にする閾値
         WEBCAM_IMAGE_SIZE = 1024 ---- webcam入力画像サイズ
@@ -162,7 +169,10 @@ _**"Always by you side."**_
 
         リンク:   
         [kuri54/mlx-CYTOLONE-v1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1)  
-        [mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)
+        [kuri54/mlx-CYTOLONE-v1.1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1)  
+        [mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)  
+        [mlx-community/gpt-oss-120b-MXFP4-Q4](https://huggingface.co/mlx-community/gpt-oss-120b-MXFP4-Q4)  
+        [mlx-community/gpt-oss-20b-MXFP4-Q8](https://huggingface.co/mlx-community/gpt-oss-20b-MXFP4-Q8)  
 
         配置:  
         ```

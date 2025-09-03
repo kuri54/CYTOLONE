@@ -46,12 +46,12 @@ def main():
 
     # Updatable Keys
     parser.add_argument("--LANGUAGE", choices=["ja", "en"])
+    parser.add_argument("--MODEL", choices=["v1.0", "v1.1"])
+    parser.add_argument("--LLM_MODEL", choices=["deepseek-r1", "gpt-oss-120b", "gpt-oss-20b"])
     parser.add_argument("--LLM_GEN", choices=["True", "False"])
     parser.add_argument("--LLM_GEN_THRESHOLD", type=float)
     parser.add_argument("--WEBCAM_IMAGE_SIZE", type=int)
     parser.add_argument("--DEBUG", choices=["True", "False"])
-
-    # parser.add_argument("--MODEL")
 
     args = parser.parse_args()
 
