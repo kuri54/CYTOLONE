@@ -12,6 +12,8 @@ dependencies = [
     "gradio>=5.37.0",
     "mlx>=0.27.1",
     "mlx-lm>=0.26.4",
+    "typer>=0.20.0",
+    "typer-slim>=0.20.0",
 ]
 
 [project.scripts]

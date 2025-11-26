@@ -184,10 +184,7 @@ def run():
         config=config
     )
 
-    with gr.Blocks(title="CYTOLONE", css="""
-        .output-container { min-height: 400px !important; }
-        .comment-box { max-height: 500px; overflow-y: auto; }
-        """) as app:
+    with gr.Blocks(title="CYTOLONE") as app:
         gr.Markdown("# CYTOLONE")
 
         # 入力セクション
