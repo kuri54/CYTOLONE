@@ -27,8 +27,8 @@
 
 <br>
 
-📝 Note:  
-> Currently, the only **verified setup** is **iPhone 15 × [i-NTER LENS](https://www.microscope-net.com/products/smartphone/inter-lens/)**.  
+📝 Note:
+> Currently, the only **verified setup** is **iPhone 15 × [i-NTER LENS](https://www.microscope-net.com/products/smartphone/inter-lens/)**.
 > Please report other device combinations via **Issues**!
 
 ### 🚀 How to Launch the App
@@ -38,23 +38,33 @@
     ```
     Access the URL displayed in the terminal using your web browser.  
 
-- Usage
-    1. **Select the reference image** using the radio buttons.
-    2. **Capture an image** of **normal squamous epithelial cells** with a **10x objective lens**, making sure the cells are clearly visible without overlapping.
-    3. **Adjust the scale using the slider** and compare with the reference image.
-    4. Check the **"Recommended Camera Input Size"** displayed at the bottom of the screen.
+- Modes
+    - **Manual** tab:
+        - Same workflow as before. Use the slider to match the nucleus size visually.
+    - **Semi-Auto** tab:
+        - Click one nucleus center in each image and estimate scale automatically.
+        - Keep slider-based fine tuning before applying.
 
-        💡 Tip:  
-        > The **ideal scale** is when the **nuclei sizes** match between the two images.  
-        > It is easier to check if you **expand to full screen** and **zoom in**.
+- Semi-Auto Workflow
+    1. Select a reference image.
+    2. Capture/upload an input image with a 10x objective lens.
+    3. Click one **squamous epithelial nucleus center** on the reference image.
+    4. Click one **squamous epithelial nucleus center** on the input image.
+    5. Confirm the extracted nucleus previews.
+    6. If extraction fails, re-click another nucleus.
+    7. Press **Estimate** to calculate scale.
+    8. Fine-tune with the scale slider if needed.
+    9. Press **Apply** to write `WEBCAM_IMAGE_SIZE` to `CYTOLONE/config.ini`.
 
-       - If you find it difficult to adjust, feel free to **share your images via Issues**. We can calculate the scale for you.
-       - Please **include your device information** when reporting.
+📝 Important selection rule:
+> Use only **squamous epithelial nuclei** as landmarks.
+> **Exclude inflammatory cells** and overlapping cells.
 
-    5. Update your settings using the values shown on the screen.
-       > 🔍 Scale Factor: 0.87  
-       > 📐 Cropped size: 890×890px  
-       > 📷 Recommended original image size: 1177×1177px  
-       > ```bash
-       > cytolone-config --WEBCAM_IMAGE_SIZE 1177
-       > ```
+- Output example
+    > 🔍 Scale Factor: 0.87
+    > 📐 Cropped size: 890×890px
+    > 📷 Recommended original image size: 1177×1177px
+    > Apply also shows the equivalent command:
+    > ```bash
+    > cytolone-config --WEBCAM_IMAGE_SIZE 1177
+    > ```
