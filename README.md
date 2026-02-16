@@ -36,6 +36,10 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
+- **2026/02/16**
+  - Released CYTOLONE v1.1.3!
+  - Made `scale-check` semi-automated!
+
 - **2025/09/10**
   - Released CYTOLONE-v1.1.1!
   - LLM selection is now supported!  
