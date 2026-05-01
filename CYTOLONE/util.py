@@ -1,9 +1,9 @@
 import pandas as pd
-from configparser import ConfigParser
+
+from CYTOLONE.default_config.config_manager import read_config
 
 def load_config(config_file_path="./CYTOLONE/config.ini"):
-    parser = ConfigParser()
-    parser.read(config_file_path)
+    parser = read_config(config_file_path)
 
     return {
         "LANGUAGE": parser["SETTINGS"]["LANGUAGE"],

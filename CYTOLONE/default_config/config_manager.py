@@ -6,13 +6,19 @@ from configparser import ConfigParser
 CONFIG_PATH = "CYTOLONE/config.ini"
 DEFAULT_CONFIG_PATH = "CYTOLONE/default_config/default_config.ini"
 
-def read_config(path=CONFIG_PATH):
+def read_config(path=CONFIG_PATH, fallback_to_default=True):
     config = ConfigParser()
     config.optionxform = str
-    config.read(path)
+    if os.path.exists(path):
+        config.read(path)
+    elif fallback_to_default and os.path.exists(DEFAULT_CONFIG_PATH):
+        config.read(DEFAULT_CONFIG_PATH)
     return config
 
 def write_config(config, path=CONFIG_PATH):
+    config_dir = os.path.dirname(path)
+    if config_dir:
+        os.makedirs(config_dir, exist_ok=True)
     with open(path, 'w') as configfile:
         config.write(configfile)
 

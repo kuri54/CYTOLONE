@@ -36,6 +36,11 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
+- **xxxx**
+  - Released CYTOLONE v1.1.4!
+  - Added the CYTOLONE launcher.
+  - You can now open CYTOLONE Main, scale-check, Settings, and Model Download from `cytolone`.
+
 - **2026/02/16**
   - Released CYTOLONE v1.1.3!
   - Made `scale-check` semi-automated!
@@ -137,6 +142,8 @@ Below is an example image used in the study:
       ```
 
     - How to change settings
+      - You can edit settings from the launcher: run `cytolone` or `uv run cytolone`, then open **Settings**.
+      - The CLI commands remain available.
       - Display all settings: 
         ```bash
         cytolone-config --list
@@ -164,6 +171,9 @@ Below is an example image used in the study:
     <br>
 
     - Download the models
+      - You can download models from the launcher: run `cytolone` or `uv run cytolone`, then open **Model Download**.
+      - Already installed models are skipped automatically. Use **Force re-download** only when you want to download again.
+      - The CLI command remains available.
       ```bash
       download-model
       ```
@@ -193,7 +203,15 @@ Below is an example image used in the study:
     ```bash
     cytolone
     ```
+    or:
+    ```bash
+    uv run cytolone
+    ```
+    - The CYTOLONE launcher opens first.
+    - From the launcher, you can open CYTOLONE Main, scale-check, Settings, and Model Download.
+    - Only the Launcher tab is shown in the navigation bar; use the launcher buttons to open each page.
     - Open the URL displayed in the terminal in your web browser.
+    - Click **CYTOLONE Main** to open the existing analysis screen.
     - Simply select your camera, capture an image, and click the Analyze button to view the results.
 
     <br>

@@ -7,6 +7,9 @@ models = {
     "gpt-oss-20b":{"model_id": "mlx-community/gpt-oss-20b-MXFP4-Q8"},
     }
 
+APP_MODEL_CHOICES = ["v1.0", "v1.1"]
+LLM_MODEL_CHOICES = ["deepseek-r1", "gpt-oss-120b", "gpt-oss-20b"]
+
 def get_model_id(version):
     return models[version]["model_id"]
 

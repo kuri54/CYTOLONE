@@ -326,244 +326,248 @@ def apply_scale_to_config(scale):
     return message, status
 
 
-def run():
+def build_scale_checker_page():
     config = load_config()
 
+    gr.Markdown("# Image Scale Checker")
+
+    with gr.Tabs(selected="semi_auto"):
+        with gr.Tab("Semi-Auto", id="semi_auto"):
+            semi_reference_state = gr.State(load_image("Image 1"))
+            semi_input_state = gr.State(None)
+            semi_reference_click_state = gr.State(None)
+            semi_input_click_state = gr.State(None)
+            semi_reference_diameter_state = gr.State(None)
+            semi_input_diameter_state = gr.State(None)
+
+            semi_radio = gr.Radio(
+                choices=list(REFERENCE_IMAGE_FILES.keys()),
+                value="Image 1",
+                label="Select Reference Image",
+            )
+
+            with gr.Row():
+                semi_reference_image = gr.Image(
+                    width=360,
+                    height=360,
+                    type="pil",
+                    label="Reference (Click Squamous Nucleus Center)",
+                    value=load_image("Image 1"),
+                    interactive=True,
+                )
+
+                semi_input_image = gr.Image(
+                    width=360,
+                    height=360,
+                    type="pil",
+                    image_mode="RGB",
+                    sources=["webcam", "upload"],
+                    webcam_options=gr.WebcamOptions(
+                        constraints={
+                            "video": {
+                                "width": config["WEBCAM_IMAGE_SIZE"],
+                                "height": config["WEBCAM_IMAGE_SIZE"],
+                            }
+                        },
+                        mirror=False,
+                    ),
+                    label="Input (Capture/Upload then Click Squamous Nucleus Center)",
+                    interactive=True,
+                )
+
+            with gr.Row():
+                semi_reference_nucleus_preview = gr.Image(
+                    width=260,
+                    height=260,
+                    type="pil",
+                    label="Reference Nucleus Preview",
+                )
+                semi_input_nucleus_preview = gr.Image(
+                    width=260,
+                    height=260,
+                    type="pil",
+                    label="Input Nucleus Preview",
+                )
+
+            with gr.Row():
+                semi_reference_diameter_text = gr.Textbox(
+                    label="Reference Nucleus Diameter",
+                    value="",
+                    interactive=False,
+                )
+                semi_input_diameter_text = gr.Textbox(
+                    label="Input Nucleus Diameter",
+                    value="",
+                    interactive=False,
+                )
+
+            with gr.Row():
+                semi_estimate_btn = gr.Button("Estimate")
+                semi_scale_slider = gr.Slider(
+                    MIN_SCALE,
+                    MAX_SCALE,
+                    step=0.01,
+                    value=1.0,
+                    label="Scale Factor (Auto + Fine Tuning)",
+                )
+                semi_apply_btn = gr.Button("Apply", variant="primary")
+
+            semi_result_slider = gr.ImageSlider(label="Compare Reference vs Adjusted")
+            semi_result_text = gr.Textbox(label="Scale Info", lines=4)
+            semi_status_text = gr.Textbox(label="Status", lines=2, interactive=False)
+            semi_apply_text = gr.Textbox(label="Apply Result", lines=5, interactive=False)
+
+            semi_radio.change(
+                fn=update_reference_for_semi_auto,
+                inputs=semi_radio,
+                outputs=[
+                    semi_reference_state,
+                    semi_reference_image,
+                    semi_reference_click_state,
+                    semi_reference_nucleus_preview,
+                    semi_reference_diameter_state,
+                    semi_reference_diameter_text,
+                    semi_status_text,
+                ],
+            )
+
+            semi_input_image.input(
+                fn=update_input_for_semi_auto,
+                inputs=semi_input_image,
+                outputs=[
+                    semi_input_state,
+                    semi_input_click_state,
+                    semi_input_nucleus_preview,
+                    semi_input_diameter_state,
+                    semi_input_diameter_text,
+                    semi_status_text,
+                ],
+            )
+
+            semi_reference_image.select(
+                fn=on_reference_select,
+                inputs=[semi_reference_state],
+                outputs=[
+                    semi_reference_image,
+                    semi_reference_click_state,
+                    semi_reference_nucleus_preview,
+                    semi_reference_diameter_state,
+                    semi_reference_diameter_text,
+                    semi_status_text,
+                ],
+            )
+
+            semi_input_image.select(
+                fn=on_input_select,
+                inputs=[semi_input_state],
+                outputs=[
+                    semi_input_image,
+                    semi_input_click_state,
+                    semi_input_nucleus_preview,
+                    semi_input_diameter_state,
+                    semi_input_diameter_text,
+                    semi_status_text,
+                ],
+            )
+
+            semi_estimate_btn.click(
+                fn=estimate_scale_from_nuclei,
+                inputs=[
+                    semi_reference_diameter_state,
+                    semi_input_diameter_state,
+                    semi_reference_state,
+                    semi_input_state,
+                ],
+                outputs=[
+                    semi_scale_slider,
+                    semi_result_slider,
+                    semi_result_text,
+                    semi_status_text,
+                ],
+            )
+
+            semi_scale_slider.change(
+                fn=overlay_and_calculate,
+                inputs=[semi_reference_state, semi_input_state, semi_scale_slider],
+                outputs=[semi_result_slider, semi_result_text],
+            )
+
+            semi_apply_btn.click(
+                fn=apply_scale_to_config,
+                inputs=[semi_scale_slider],
+                outputs=[semi_apply_text, semi_status_text],
+            )
+
+        with gr.Tab("Manual", id="manual"):
+            manual_radio = gr.Radio(
+                choices=list(REFERENCE_IMAGE_FILES.keys()),
+                value="Image 1",
+                label="Select Reference Image",
+            )
+
+            with gr.Row():
+                manual_reference_image = gr.Image(
+                    width=300,
+                    height=300,
+                    type="pil",
+                    label="Reference Image Preview",
+                    value=load_image("Image 1"),
+                )
+
+                manual_adjust_input = gr.ImageEditor(
+                    width=300,
+                    height=300,
+                    type="pil",
+                    canvas_size=(
+                        config["WEBCAM_IMAGE_SIZE"],
+                        config["WEBCAM_IMAGE_SIZE"],
+                    ),
+                    fixed_canvas=True,
+                    webcam_options=gr.WebcamOptions(
+                        constraints={
+                            "video": {
+                                "width": config["WEBCAM_IMAGE_SIZE"],
+                                "height": config["WEBCAM_IMAGE_SIZE"],
+                            }
+                        },
+                        mirror=False,
+                    ),
+                    sources=["webcam", "upload"],
+                    eraser=False,
+                    brush=False,
+                    layers=False,
+                    label="Adjust Image Preview",
+                )
+
+            with gr.Row():
+                manual_scale_slider = gr.Slider(
+                    MIN_SCALE,
+                    MAX_SCALE,
+                    step=0.01,
+                    value=1.0,
+                    label="Scale Factor",
+                )
+                manual_compare_btn = gr.Button("Compare")
+
+            manual_result_slider = gr.ImageSlider(label="Compare Reference vs Adjusted")
+            manual_result_text = gr.Textbox(label="Scale Info", lines=4)
+
+            manual_radio.change(
+                fn=load_image,
+                inputs=manual_radio,
+                outputs=manual_reference_image,
+            )
+
+            manual_compare_btn.click(
+                fn=overlay_and_calculate,
+                inputs=[manual_reference_image, manual_adjust_input, manual_scale_slider],
+                outputs=[manual_result_slider, manual_result_text],
+            )
+
+
+def run():
     with gr.Blocks() as app:
-        gr.Markdown("# Image Scale Checker")
-
-        with gr.Tabs(selected="semi_auto"):
-            with gr.Tab("Semi-Auto", id="semi_auto"):
-                semi_reference_state = gr.State(load_image("Image 1"))
-                semi_input_state = gr.State(None)
-                semi_reference_click_state = gr.State(None)
-                semi_input_click_state = gr.State(None)
-                semi_reference_diameter_state = gr.State(None)
-                semi_input_diameter_state = gr.State(None)
-
-                semi_radio = gr.Radio(
-                    choices=list(REFERENCE_IMAGE_FILES.keys()),
-                    value="Image 1",
-                    label="Select Reference Image",
-                )
-
-                with gr.Row():
-                    semi_reference_image = gr.Image(
-                        width=360,
-                        height=360,
-                        type="pil",
-                        label="Reference (Click Squamous Nucleus Center)",
-                        value=load_image("Image 1"),
-                        interactive=True,
-                    )
-
-                    semi_input_image = gr.Image(
-                        width=360,
-                        height=360,
-                        type="pil",
-                        image_mode="RGB",
-                        sources=["webcam", "upload"],
-                        webcam_options=gr.WebcamOptions(
-                            constraints={
-                                "video": {
-                                    "width": config["WEBCAM_IMAGE_SIZE"],
-                                    "height": config["WEBCAM_IMAGE_SIZE"],
-                                }
-                            },
-                            mirror=False,
-                        ),
-                        label="Input (Capture/Upload then Click Squamous Nucleus Center)",
-                        interactive=True,
-                    )
-
-                with gr.Row():
-                    semi_reference_nucleus_preview = gr.Image(
-                        width=260,
-                        height=260,
-                        type="pil",
-                        label="Reference Nucleus Preview",
-                    )
-                    semi_input_nucleus_preview = gr.Image(
-                        width=260,
-                        height=260,
-                        type="pil",
-                        label="Input Nucleus Preview",
-                    )
-
-                with gr.Row():
-                    semi_reference_diameter_text = gr.Textbox(
-                        label="Reference Nucleus Diameter",
-                        value="",
-                        interactive=False,
-                    )
-                    semi_input_diameter_text = gr.Textbox(
-                        label="Input Nucleus Diameter",
-                        value="",
-                        interactive=False,
-                    )
-
-                with gr.Row():
-                    semi_estimate_btn = gr.Button("Estimate")
-                    semi_scale_slider = gr.Slider(
-                        MIN_SCALE,
-                        MAX_SCALE,
-                        step=0.01,
-                        value=1.0,
-                        label="Scale Factor (Auto + Fine Tuning)",
-                    )
-                    semi_apply_btn = gr.Button("Apply", variant="primary")
-
-                semi_result_slider = gr.ImageSlider(label="Compare Reference vs Adjusted")
-                semi_result_text = gr.Textbox(label="Scale Info", lines=4)
-                semi_status_text = gr.Textbox(label="Status", lines=2, interactive=False)
-                semi_apply_text = gr.Textbox(label="Apply Result", lines=5, interactive=False)
-
-                semi_radio.change(
-                    fn=update_reference_for_semi_auto,
-                    inputs=semi_radio,
-                    outputs=[
-                        semi_reference_state,
-                        semi_reference_image,
-                        semi_reference_click_state,
-                        semi_reference_nucleus_preview,
-                        semi_reference_diameter_state,
-                        semi_reference_diameter_text,
-                        semi_status_text,
-                    ],
-                )
-
-                semi_input_image.input(
-                    fn=update_input_for_semi_auto,
-                    inputs=semi_input_image,
-                    outputs=[
-                        semi_input_state,
-                        semi_input_click_state,
-                        semi_input_nucleus_preview,
-                        semi_input_diameter_state,
-                        semi_input_diameter_text,
-                        semi_status_text,
-                    ],
-                )
-
-                semi_reference_image.select(
-                    fn=on_reference_select,
-                    inputs=[semi_reference_state],
-                    outputs=[
-                        semi_reference_image,
-                        semi_reference_click_state,
-                        semi_reference_nucleus_preview,
-                        semi_reference_diameter_state,
-                        semi_reference_diameter_text,
-                        semi_status_text,
-                    ],
-                )
-
-                semi_input_image.select(
-                    fn=on_input_select,
-                    inputs=[semi_input_state],
-                    outputs=[
-                        semi_input_image,
-                        semi_input_click_state,
-                        semi_input_nucleus_preview,
-                        semi_input_diameter_state,
-                        semi_input_diameter_text,
-                        semi_status_text,
-                    ],
-                )
-
-                semi_estimate_btn.click(
-                    fn=estimate_scale_from_nuclei,
-                    inputs=[
-                        semi_reference_diameter_state,
-                        semi_input_diameter_state,
-                        semi_reference_state,
-                        semi_input_state,
-                    ],
-                    outputs=[
-                        semi_scale_slider,
-                        semi_result_slider,
-                        semi_result_text,
-                        semi_status_text,
-                    ],
-                )
-
-                semi_scale_slider.change(
-                    fn=overlay_and_calculate,
-                    inputs=[semi_reference_state, semi_input_state, semi_scale_slider],
-                    outputs=[semi_result_slider, semi_result_text],
-                )
-
-                semi_apply_btn.click(
-                    fn=apply_scale_to_config,
-                    inputs=[semi_scale_slider],
-                    outputs=[semi_apply_text, semi_status_text],
-                )
-
-            with gr.Tab("Manual", id="manual"):
-                manual_radio = gr.Radio(
-                    choices=list(REFERENCE_IMAGE_FILES.keys()),
-                    value="Image 1",
-                    label="Select Reference Image",
-                )
-
-                with gr.Row():
-                    manual_reference_image = gr.Image(
-                        width=300,
-                        height=300,
-                        type="pil",
-                        label="Reference Image Preview",
-                        value=load_image("Image 1"),
-                    )
-
-                    manual_adjust_input = gr.ImageEditor(
-                        width=300,
-                        height=300,
-                        type="pil",
-                        canvas_size=(
-                            config["WEBCAM_IMAGE_SIZE"],
-                            config["WEBCAM_IMAGE_SIZE"],
-                        ),
-                        fixed_canvas=True,
-                        webcam_options=gr.WebcamOptions(
-                            constraints={
-                                "video": {
-                                    "width": config["WEBCAM_IMAGE_SIZE"],
-                                    "height": config["WEBCAM_IMAGE_SIZE"],
-                                }
-                            },
-                            mirror=False,
-                        ),
-                        sources=["webcam", "upload"],
-                        eraser=False,
-                        brush=False,
-                        layers=False,
-                        label="Adjust Image Preview",
-                    )
-
-                with gr.Row():
-                    manual_scale_slider = gr.Slider(
-                        MIN_SCALE,
-                        MAX_SCALE,
-                        step=0.01,
-                        value=1.0,
-                        label="Scale Factor",
-                    )
-                    manual_compare_btn = gr.Button("Compare")
-
-                manual_result_slider = gr.ImageSlider(label="Compare Reference vs Adjusted")
-                manual_result_text = gr.Textbox(label="Scale Info", lines=4)
-
-                manual_radio.change(
-                    fn=load_image,
-                    inputs=manual_radio,
-                    outputs=manual_reference_image,
-                )
-
-                manual_compare_btn.click(
-                    fn=overlay_and_calculate,
-                    inputs=[manual_reference_image, manual_adjust_input, manual_scale_slider],
-                    outputs=[manual_result_slider, manual_result_text],
-                )
+        build_scale_checker_page()
 
     app.launch()
 
