@@ -34,10 +34,11 @@ _**"Always by you side."**_
 </div>
 
 ## 🤩 アップデート履歴
-- **xxxx**
-  - CYTOLONE-v1.1.4 をリリース！
-  - CYTOLONE ランチャーを追加しました！
-  - `cytolone` から CYTOLONE メイン、scale-check、設定変更、モデルDL を開けるようになりました。
+- **2026年5月5日**
+  - CYTOLONE ランチャーを実装しました。
+  - `cytolone` から CYTOLONE Main、scale-check、Settings、Model Download を開けるようになりました。
+  - 顕微鏡ワークフロー向けに、継続したカメラ入力に対応しました。
+  - これまでのように毎回カメラの撮影ボタンを押す必要はありません。カメラ接続を維持したまま、**Analyze** ボタンで現在の視野を判定できます。
 
 - **2026年2月16日**
   - CYTOLONE-v1.1.3 をリリース！

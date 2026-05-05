@@ -36,10 +36,11 @@ Below is an example image used in the study:
 </div>
 
 ## 🤩 Update History
-- **xxxx**
-  - Released CYTOLONE v1.1.4!
+- **2026/05/05**
   - Added the CYTOLONE launcher.
   - You can now open CYTOLONE Main, scale-check, Settings, and Model Download from `cytolone`.
+  - Added continuous camera input for smoother microscope workflows.
+  - You no longer need to press the default camera capture button each time. Keep the camera connected and press the **Analyze** button to evaluate the current view.
 
 - **2026/02/16**
   - Released CYTOLONE v1.1.3!
