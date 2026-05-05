@@ -34,6 +34,12 @@ _**"Always by you side."**_
 </div>
 
 ## 🤩 アップデート履歴
+- **2026年5月5日**
+  - CYTOLONE ランチャーを実装しました。
+  - `cytolone` から CYTOLONE Main、scale-check、Settings、Model Download を開けるようになりました。
+  - 顕微鏡ワークフロー向けに、継続したカメラ入力に対応しました。
+  - これまでのように毎回カメラの撮影ボタンを押す必要はありません。カメラ接続を維持したまま、**Analyze** ボタンで現在の視野を判定できます。
+
 - **2026年2月16日**
   - CYTOLONE-v1.1.3 をリリース！
   - scale-checkを半自動化しました！
@@ -135,6 +141,8 @@ _**"Always by you side."**_
         ```
 
     - 設定変更方法
+        - ランチャーから設定を変更できます。`cytolone` または `uv run cytolone` を実行し、**Settings** を開いてください。
+        - CLI コマンドも引き続き利用できます。
         - 設定一覧を表示: 
           ```bash
           cytolone-config --list
@@ -161,6 +169,9 @@ _**"Always by you side."**_
     <br>
 
     - モデルのダウンロード
+      - ランチャーからモデルをダウンロードできます。`cytolone` または `uv run cytolone` を実行し、**Model Download** を開いてください。
+      - すでにインストール済みのモデルは自動的にスキップされます。再ダウンロードしたい場合のみ **Force re-download** を使用してください。
+      - CLI コマンドも引き続き利用できます。
       ```bash
       download-model
       ```
@@ -189,7 +200,15 @@ _**"Always by you side."**_
     ```bash
     cytolone
     ```
+    または:
+    ```bash
+    uv run cytolone
+    ```
+    - 最初に CYTOLONE ランチャー画面が開きます。
+    - ランチャーから CYTOLONE メイン、scale-check、設定変更、モデルDL を開けます。
+    - ナビゲーションバーには Launcher タブだけが表示されます。各ページへはランチャー内のボタンから移動してください。
     - ターミナルに表示されたアドレスにWebブラウザでアクセスする。  
+    - **CYTOLONE Main** を押すと、従来の解析画面が開きます。
     - カメラ選択 → 写真撮影 → **Analyze ボタンをクリック** するだけで判定結果が表示されます。
 
     <br>
