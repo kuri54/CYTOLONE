@@ -1,7 +1,9 @@
 import os
 import re
+import base64
 import numpy as np
 import gradio as gr
+from io import BytesIO
 from functools import partial
 from PIL import Image
 
@@ -26,12 +28,46 @@ model_cache = {}
 processor_cache = {}
 llm_model_cache = {}
 llm_tokenizer_cache = {}
+TARGET_SIZE = 1024
 
 PAGE_TABS_CSS = """
 #page-tabs > .tab-wrapper > .tab-container[role="tablist"] > button:not([data-tab-id="launcher"]),
 #page-tabs > .tab-wrapper > .tab-container.visually-hidden > button:not(:first-child),
 #page-tabs > .tab-wrapper > .overflow-menu {
     display: none !important;
+}
+"""
+
+CAPTURE_CURRENT_VIEW_JS = """
+(choiceCaption, imageValue, capturePayload) => {
+    const root = document.querySelector("#cytolone-image-input");
+    const video = root?.querySelector("video");
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+        return [choiceCaption, imageValue, null];
+    }
+
+    const sourceSize = Math.min(video.videoWidth, video.videoHeight);
+    const sourceX = Math.floor((video.videoWidth - sourceSize) / 2);
+    const sourceY = Math.floor((video.videoHeight - sourceSize) / 2);
+    const canvas = document.createElement("canvas");
+    canvas.width = sourceSize;
+    canvas.height = sourceSize;
+    const context = canvas.getContext("2d");
+
+    context.drawImage(
+        video,
+        sourceX,
+        sourceY,
+        sourceSize,
+        sourceSize,
+        0,
+        0,
+        sourceSize,
+        sourceSize
+    );
+
+    return [choiceCaption, imageValue, canvas.toDataURL("image/png")];
 }
 """
 
@@ -77,29 +113,92 @@ def clean_llm_output(text):
 
     return text.strip()
 
-def center_crop(image, size=1024):
-    if isinstance(image["composite"], np.ndarray):
-        image = Image.fromarray(image["composite"])
+def data_url_to_pil_image(data_url):
+    header, encoded = data_url.split(",", 1)
+    if not header.startswith("data:image/"):
+        raise gr.Error("Unsupported captured image format. Please try again.")
 
-    width, height = image["composite"].size
+    return Image.open(BytesIO(base64.b64decode(encoded)))
+
+def as_pil_image(image):
+    if image is None:
+        raise gr.Error("Please select a webcam or upload an image before analyzing.")
+
+    if isinstance(image, dict):
+        background = image.get("background")
+        image = background if background is not None else image.get("composite")
+
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    elif isinstance(image, str):
+        if image.startswith("data:image/"):
+            image = data_url_to_pil_image(image)
+        else:
+            image = Image.open(image)
+
+    if not isinstance(image, Image.Image):
+        raise gr.Error("Unsupported image input. Please capture or upload an image again.")
+
+    return image.convert("RGB")
+
+def center_crop(image, size):
+    image = as_pil_image(image)
+    width, height = image.size
     left = (width - size) // 2
     top = (height - size) // 2
     right = left + size
     bottom = top + size
-    return image["composite"].crop((left, top, right, bottom))
+    return image.crop((left, top, right, bottom))
 
-def classify_labels(choice_caption, image, specimen, classification_label, order, config):
+def prepare_inference_image(image, config):
+    image = as_pil_image(image)
+    input_size = min(image.size)
+    configured_size = int(config["WEBCAM_IMAGE_SIZE"])
+    scale = TARGET_SIZE / configured_size
+    crop_size = int(TARGET_SIZE * scale)
+    crop_size = max(1, min(crop_size, input_size))
+    cropped_image = center_crop(image, crop_size)
+
+    if cropped_image.size != (TARGET_SIZE, TARGET_SIZE):
+        cropped_image = cropped_image.resize((TARGET_SIZE, TARGET_SIZE))
+
+    return cropped_image, {
+        "scale": scale,
+        "crop_size": crop_size,
+        "original_size": image.size,
+        "inference_size": cropped_image.size,
+    }
+
+def save_debug_preprocess_info(source, preprocess_info, config):
+    save_dir = "debug_images"
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    with open(f"{save_dir}/preprocess_info.txt", "w", encoding="utf-8") as file:
+        file.write(f"source = {source}\n")
+        file.write(f"WEBCAM_IMAGE_SIZE = {config['WEBCAM_IMAGE_SIZE']}\n")
+        file.write(f"scale = {preprocess_info['scale']:.6f}\n")
+        file.write(f"crop_size = {preprocess_info['crop_size']}\n")
+        original_size = preprocess_info["original_size"]
+        inference_size = preprocess_info["inference_size"]
+        file.write(f"original_image_size = {original_size[0]}x{original_size[1]}\n")
+        file.write(f"inference_image_size = {inference_size[0]}x{inference_size[1]}\n")
+
+def classify_labels(choice_caption, image, specimen, classification_label, order, config, source="image_input"):
+    image = as_pil_image(image)
+
     if config["DEBUG"]:
         save_dir = "debug_images"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        image["composite"].save(f"{save_dir}/original_image.jpg")
+        image.save(f"{save_dir}/original_image.jpg")
 
-    image = center_crop(image, size=1024)
+    image, preprocess_info = prepare_inference_image(image, config)
 
     if config["DEBUG"]:
         image.save(f"{save_dir}/cropped_image.jpg")
+        save_debug_preprocess_info(source, preprocess_info, config)
 
     model_path = get_model_id(config["MODEL"])
 
@@ -195,18 +294,25 @@ def refresh_main_page(specimen="cervix"):
         gr.update(choices=choices, value=choices[0] if choices else None),
         build_config_df(config),
         gr.update(
-            canvas_size=(image_size, image_size),
             webcam_options=gr.WebcamOptions(
                 constraints={"video": {"width": image_size, "height": image_size}},
                 mirror=False,
             ),
         ),
+        "",
     )
 
-def classify_with_current_config(choice_caption, image, specimen):
+def select_image_for_analysis(image, captured_image, config):
+    if isinstance(captured_image, str) and captured_image.startswith("data:image/"):
+        return captured_image, "webcam_capture"
+    return image, "image_input"
+
+def classify_with_current_config(choice_caption, image, captured_image, specimen):
     config, question, classification_label, order = get_main_context(specimen)
     if choice_caption not in question:
         choice_caption = next(iter(question))
+
+    image, source = select_image_for_analysis(image, captured_image, config)
 
     return classify_labels(
         choice_caption,
@@ -215,6 +321,7 @@ def classify_with_current_config(choice_caption, image, specimen):
         classification_label=classification_label,
         order=order,
         config=config,
+        source=source,
     )
 
 def generate_comments_with_current_config(choice_caption, label_probs, specimen):
@@ -249,16 +356,11 @@ def build_main_page(specimen="cervix"):
             )
 
         with gr.Column():
-            image_input = gr.ImageEditor(
+            image_input = gr.Image(
                 type="pil",
                 image_mode="RGB",
                 height=500,
                 width=500,
-                canvas_size=(
-                    config["WEBCAM_IMAGE_SIZE"],
-                    config["WEBCAM_IMAGE_SIZE"]
-                    ),
-                fixed_canvas=True,
                 webcam_options=gr.WebcamOptions(
                     constraints={"video": {
                         "width": config["WEBCAM_IMAGE_SIZE"],
@@ -266,9 +368,13 @@ def build_main_page(specimen="cervix"):
                         }},
                     mirror=False),
                 sources=["webcam", "upload"],
-                eraser=False,
-                brush=False,
-                layers=False
+                interactive=True,
+                label="Image",
+                elem_id="cytolone-image-input"
+            )
+            capture_payload = gr.Textbox(
+                value="",
+                visible=False,
             )
 
     submit_btn = gr.Button("Analyze", variant="primary")
@@ -288,8 +394,10 @@ def build_main_page(specimen="cervix"):
         inputs=[
             question_selector,
             image_input,
+            capture_payload,
         ],
-        outputs=label_output
+        outputs=label_output,
+        js=CAPTURE_CURRENT_VIEW_JS,
         )
 
     classify_event.success(
@@ -301,7 +409,7 @@ def build_main_page(specimen="cervix"):
         outputs=comment_output
         )
 
-    return question_selector, config_table, image_input
+    return question_selector, config_table, image_input, capture_payload
 
 def build_model_download_page():
     gr.Markdown("# Model Download")
