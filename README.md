@@ -231,7 +231,8 @@ Click the red button to connect to your iPhone.
 <br>
 
 💡 Tip:  
-> If your face appears using the built-in Mac camera, simply select your iPhone to switch.
+> If your face appears using the built-in Mac camera, select your iPhone once. CYTOLONE remembers that iPhone in the browser and tries to reconnect it automatically the next time.
+> If Center Stage is enabled when using the iPhone camera, turn it off from the Mac menu bar video menu, or from Control Center > Video Effects. This is a macOS Continuity Camera setting, not a CYTOLONE setting.
 
 <br>
 
