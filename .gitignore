@@ -1,5 +1,6 @@
 debug_images/*
 mlx_models/*
+CYTOLONE/config.ini
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
