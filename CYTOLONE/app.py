@@ -71,6 +71,160 @@ CAPTURE_CURRENT_VIEW_JS = """
 }
 """
 
+def build_iphone_camera_preference_js(image_size):
+    script = """
+(() => {
+    const rootSelector = "#cytolone-image-input";
+    const storageKey = "cytolone.preferredCamera";
+    const iphoneLabelPattern = /iphone|continuity camera/i;
+    const imageSize = __IMAGE_SIZE__;
+    let applyingPreference = false;
+    let lastAppliedDeviceId = null;
+    let preferenceApplied = false;
+    let preferenceAttempts = 0;
+    const retryDelays = [300, 700, 1200, 2000, 3000, 5000];
+
+    const getStoredCamera = () => {
+        try {
+            return JSON.parse(window.localStorage.getItem(storageKey) || "null");
+        } catch {
+            return null;
+        }
+    };
+
+    const storeCamera = (deviceId, label) => {
+        if (!deviceId || !label || !iphoneLabelPattern.test(label)) {
+            return;
+        }
+        window.localStorage.setItem(
+            storageKey,
+            JSON.stringify({ deviceId, label, savedAt: new Date().toISOString() })
+        );
+    };
+
+    const getVideo = () => document.querySelector(rootSelector)?.querySelector("video");
+
+    const getVideoTrack = (video) => {
+        const stream = video?.srcObject;
+        return stream?.getVideoTracks?.()[0] || null;
+    };
+
+    const rememberCurrentIphoneCamera = () => {
+        const track = getVideoTrack(getVideo());
+        if (!track) {
+            return;
+        }
+        const settings = track.getSettings?.() || {};
+        storeCamera(settings.deviceId, track.label || "");
+    };
+
+    const selectStoredDevice = async () => {
+        const stored = getStoredCamera();
+        if (!stored?.deviceId && !stored?.label) {
+            return null;
+        }
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((device) => device.kind === "videoinput");
+
+        return (
+            cameras.find((device) => stored.deviceId && device.deviceId === stored.deviceId) ||
+            cameras.find((device) => stored.label && device.label === stored.label) ||
+            cameras.find((device) => stored.label && device.label.includes(stored.label)) ||
+            null
+        );
+    };
+
+    const schedulePreferredCameraRetry = () => {
+        if (preferenceApplied || preferenceAttempts >= retryDelays.length) {
+            return;
+        }
+        const delay = retryDelays[preferenceAttempts];
+        preferenceAttempts += 1;
+        window.setTimeout(applyPreferredCamera, delay);
+    };
+
+    const applyPreferredCamera = async () => {
+        if (preferenceApplied || applyingPreference || !navigator.mediaDevices?.getUserMedia) {
+            return;
+        }
+
+        const video = getVideo();
+        const currentTrack = getVideoTrack(video);
+        if (!video || !currentTrack) {
+            schedulePreferredCameraRetry();
+            return;
+        }
+
+        rememberCurrentIphoneCamera();
+
+        const device = await selectStoredDevice();
+        if (!device?.deviceId || device.deviceId === lastAppliedDeviceId) {
+            schedulePreferredCameraRetry();
+            return;
+        }
+
+        const currentDeviceId = currentTrack.getSettings?.().deviceId;
+        if (currentDeviceId === device.deviceId) {
+            lastAppliedDeviceId = device.deviceId;
+            preferenceApplied = true;
+            storeCamera(device.deviceId, device.label);
+            return;
+        }
+
+        applyingPreference = true;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId: { exact: device.deviceId },
+                    width: imageSize,
+                    height: imageSize
+                }
+            });
+            video.srcObject = stream;
+            await video.play();
+            lastAppliedDeviceId = device.deviceId;
+            preferenceApplied = true;
+            storeCamera(device.deviceId, device.label);
+        } catch (error) {
+            console.warn("CYTOLONE could not reconnect the saved iPhone camera.", error);
+            schedulePreferredCameraRetry();
+        } finally {
+            applyingPreference = false;
+        }
+    };
+
+    const watchCamera = () => {
+        const video = getVideo();
+        if (!video) {
+            return;
+        }
+        if (video.dataset.cytoloneCameraPreferenceWatched === "true") {
+            return;
+        }
+        video.dataset.cytoloneCameraPreferenceWatched = "true";
+
+        video.addEventListener("loadedmetadata", () => {
+            rememberCurrentIphoneCamera();
+        });
+        video.addEventListener("play", () => {
+            rememberCurrentIphoneCamera();
+        });
+        schedulePreferredCameraRetry();
+    };
+
+    const observer = new MutationObserver(watchCamera);
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            schedulePreferredCameraRetry();
+        }
+    });
+    watchCamera();
+})();
+"""
+    return script.replace("__IMAGE_SIZE__", str(image_size))
+
 def get_partial_labels(classification_label, order, order_type):
     if order_type == "Full":
         return classification_label
@@ -371,6 +525,10 @@ def build_main_page(specimen="cervix"):
                 interactive=True,
                 label="Image",
                 elem_id="cytolone-image-input"
+            )
+            gr.HTML(
+                "",
+                js_on_load=build_iphone_camera_preference_js(config["WEBCAM_IMAGE_SIZE"]),
             )
             capture_payload = gr.Textbox(
                 value="",
