@@ -1,0 +1,20 @@
+{
+  "name": "cytolone-even-g2-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "demo": "./start-demo.sh",
+    "simulator": "evenhub-simulator http://127.0.0.1:5173 --automation-port 9898"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.12"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-simulator": "0.8.0",
+    "typescript": "5.9.3",
+    "vite": "^7.3.6"
+  }
+}

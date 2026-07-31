@@ -4,7 +4,6 @@ import base64
 import numpy as np
 import gradio as gr
 from io import BytesIO
-from functools import partial
 from PIL import Image
 
 import torch
@@ -19,6 +18,14 @@ from CYTOLONE.label_caption import (
 
 from CYTOLONE.model import get_model_id, get_llm_id
 from CYTOLONE.download_models import download_models_with_status
+from CYTOLONE.handsfree import (
+    AVAILABLE_SPECIMENS,
+    EXTERNAL_OUTPUT_CHOICES,
+    EXTERNAL_OUTPUT_G2,
+    G2_SUPPORTED_ORDER_TYPES,
+    HandsfreeServer,
+    handsfree_bridge,
+)
 from CYTOLONE.scale_check.scale_checker import build_scale_checker_page
 from CYTOLONE.settings_page import apply_settings, build_settings_page, get_settings_values
 
@@ -39,12 +46,12 @@ PAGE_TABS_CSS = """
 """
 
 CAPTURE_CURRENT_VIEW_JS = """
-(choiceCaption, imageValue, capturePayload) => {
+(choiceCaption, imageValue, capturePayload, specimen, externalOutput) => {
     const root = document.querySelector("#cytolone-image-input");
     const video = root?.querySelector("video");
 
     if (!video || !video.videoWidth || !video.videoHeight) {
-        return [choiceCaption, imageValue, null];
+        return [choiceCaption, imageValue, null, specimen, externalOutput];
     }
 
     const sourceSize = Math.min(video.videoWidth, video.videoHeight);
@@ -67,8 +74,86 @@ CAPTURE_CURRENT_VIEW_JS = """
         sourceSize
     );
 
-    return [choiceCaption, imageValue, canvas.toDataURL("image/png")];
+    return [
+        choiceCaption,
+        imageValue,
+        canvas.toDataURL("image/png"),
+        specimen,
+        externalOutput
+    ];
 }
+"""
+
+HANDS_FREE_CAPTURE_BRIDGE_JS = """
+(() => {
+    if (element.__cytoloneHandsfreeCaptureTimer) {
+        clearInterval(element.__cytoloneHandsfreeCaptureTimer);
+    }
+
+    const pageDocument = element.ownerDocument;
+    let submittedCommandId = null;
+    let submitting = false;
+
+    const submitCurrentFrame = async () => {
+        if (submitting) return;
+
+        let state;
+        try {
+            const response = await fetch("http://127.0.0.1:8765/api/state");
+            state = await response.json();
+        } catch {
+            return;
+        }
+
+        const commandId = state.pending_command_id;
+        if (state.status !== "queued" || commandId == null) {
+            submittedCommandId = null;
+            return;
+        }
+        if (commandId === submittedCommandId) return;
+
+        const root = pageDocument.querySelector("#cytolone-image-input");
+        const video = root?.querySelector("video");
+        let image = null;
+
+        if (video && video.videoWidth && video.videoHeight) {
+            const sourceSize = Math.min(video.videoWidth, video.videoHeight);
+            const sourceX = Math.floor((video.videoWidth - sourceSize) / 2);
+            const sourceY = Math.floor((video.videoHeight - sourceSize) / 2);
+            const canvas = pageDocument.createElement("canvas");
+            canvas.width = sourceSize;
+            canvas.height = sourceSize;
+            const context = canvas.getContext("2d");
+            context.drawImage(
+                video,
+                sourceX,
+                sourceY,
+                sourceSize,
+                sourceSize,
+                0,
+                0,
+                sourceSize,
+                sourceSize
+            );
+            image = canvas.toDataURL("image/png");
+        }
+
+        submitting = true;
+        try {
+            const response = await fetch("http://127.0.0.1:8765/api/frame", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({command_id: commandId, image}),
+            });
+            if (response.ok) submittedCommandId = commandId;
+        } finally {
+            submitting = false;
+        }
+    };
+
+    element.__cytoloneHandsfreeCaptureTimer = setInterval(submitCurrentFrame, 200);
+    element.dataset.cytoloneHandsfreeCaptureActive = "true";
+})();
 """
 
 def build_iphone_camera_preference_js(image_size):
@@ -439,12 +524,117 @@ def get_main_context(specimen):
     question, classification_label, order = get_label_caption(specimen, config["LANGUAGE"])
     return config, question, classification_label, order
 
+def get_question_caption_for_order_type(specimen, order_type):
+    config, question, _, _ = get_main_context(specimen)
+    for caption, caption_order_type in question.items():
+        if caption_order_type == order_type:
+            return caption
+    raise ValueError(
+        f"Question type {order_type} is not available for {specimen} in {config['LANGUAGE']}"
+    )
+
+def remember_handsfree_image(image):
+    if image is None:
+        return
+    handsfree_bridge.set_latest_image(as_pil_image(image))
+
+def sync_handsfree_settings(specimen, choice_caption):
+    config, question, _, _ = get_main_context(specimen)
+    if choice_caption not in question:
+        choice_caption = next(iter(question))
+    handsfree_bridge.update_settings(
+        specimen,
+        get_order_type(specimen, config["LANGUAGE"], choice_caption),
+        source="mac",
+    )
+
+def update_external_output(output_target, specimen, choice_caption):
+    handsfree_bridge.set_output_target(output_target)
+    sync_handsfree_settings(specimen, choice_caption)
+    return handsfree_bridge.connection_status()
+
+def process_handsfree_tick():
+    command, captured_image = handsfree_bridge.pop_ready_command()
+    settings = handsfree_bridge.pop_ui_settings()
+
+    if settings is None:
+        specimen_update = gr.skip()
+        question_update = gr.skip()
+    else:
+        specimen = settings["specimen"]
+        config, question, _, _ = get_main_context(specimen)
+        specimen_update = gr.update(value=specimen)
+        question_update = gr.update(
+            choices=list(question.keys()),
+            value=get_question_caption_for_order_type(specimen, settings["order_type"]),
+        )
+
+    if command:
+        label_update, remote_result = classify_handsfree_command(
+            command,
+            captured_image,
+        )
+    else:
+        label_update, remote_result = gr.skip(), None
+
+    return (
+        specimen_update,
+        question_update,
+        handsfree_bridge.connection_status(),
+        label_update,
+        remote_result,
+    )
+
+def classify_handsfree_command(command, captured_image):
+    if not command:
+        return gr.skip(), None
+
+    specimen = command["specimen"]
+    order_type = command["order_type"]
+    question_caption = get_question_caption_for_order_type(specimen, order_type)
+    image = handsfree_bridge.get_latest_image()
+
+    if image is None and not (
+        isinstance(captured_image, str) and captured_image.startswith("data:image/")
+    ):
+        handsfree_bridge.publish_error("NO_IMAGE", "Import an image in CYTOLONE before analyzing.")
+        return gr.skip(), {"error": "NO_IMAGE"}
+
+    handsfree_bridge.begin_analysis(command["id"])
+    try:
+        label_probs = classify_with_current_config(
+            question_caption,
+            image,
+            captured_image,
+            specimen,
+            EXTERNAL_OUTPUT_G2,
+        )
+    except Exception as error:
+        handsfree_bridge.publish_error("INFERENCE_ERROR", str(error))
+        raise
+
+    return label_probs, {
+        "question_caption": question_caption,
+        "label_probs": label_probs,
+        "specimen": specimen,
+    }
+
+def generate_handsfree_comments(payload):
+    if not payload or payload.get("error"):
+        return gr.skip()
+    return generate_comments_with_current_config(
+        payload["question_caption"],
+        payload["label_probs"],
+        payload["specimen"],
+    )
+
 def refresh_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
     choices = list(question.keys())
     image_size = config["WEBCAM_IMAGE_SIZE"]
 
     return (
+        gr.update(choices=AVAILABLE_SPECIMENS, value=specimen),
         gr.update(choices=choices, value=choices[0] if choices else None),
         build_config_df(config),
         gr.update(
@@ -461,14 +651,23 @@ def select_image_for_analysis(image, captured_image, config):
         return captured_image, "webcam_capture"
     return image, "image_input"
 
-def classify_with_current_config(choice_caption, image, captured_image, specimen):
+def classify_with_current_config(
+    choice_caption,
+    image,
+    captured_image,
+    specimen,
+    external_output,
+):
     config, question, classification_label, order = get_main_context(specimen)
     if choice_caption not in question:
         choice_caption = next(iter(question))
 
     image, source = select_image_for_analysis(image, captured_image, config)
+    handsfree_bridge.set_latest_image(as_pil_image(image))
+    order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
+    handsfree_bridge.update_settings(specimen, order_type, source="mac")
 
-    return classify_labels(
+    label_probs = classify_labels(
         choice_caption,
         image,
         specimen=specimen,
@@ -477,6 +676,17 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
         config=config,
         source=source,
     )
+
+    if external_output == EXTERNAL_OUTPUT_G2:
+        if order_type in G2_SUPPORTED_ORDER_TYPES:
+            handsfree_bridge.publish_result(specimen, order_type, label_probs)
+        else:
+            handsfree_bridge.publish_error(
+                "UNSUPPORTED_MODE",
+                "Full results remain available on the Mac only.",
+            )
+
+    return label_probs
 
 def generate_comments_with_current_config(choice_caption, label_probs, specimen):
     config, question, _, _ = get_main_context(specimen)
@@ -489,17 +699,35 @@ def generate_comments_with_current_config(choice_caption, label_probs, specimen)
 
 def build_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
+    question_choices = list(question.keys())
 
     gr.Markdown("# CYTOLONE")
 
     with gr.Row():
         with gr.Column():
+            specimen_selector = gr.Dropdown(
+                AVAILABLE_SPECIMENS,
+                value=specimen,
+                label="Specimen",
+                allow_custom_value=False,
+            )
+
             question_selector = gr.Dropdown(
-                list(question.keys()),
+                question_choices,
+                value=question_choices[0] if question_choices else None,
                 label="Question Type",
                 scale=1,
                 allow_custom_value=True,
                 )
+
+            external_output = gr.Dropdown(
+                EXTERNAL_OUTPUT_CHOICES,
+                value=EXTERNAL_OUTPUT_CHOICES[0],
+                label="External output",
+                allow_custom_value=False,
+            )
+
+            g2_status = gr.Markdown(handsfree_bridge.connection_status())
 
             config_table = gr.Dataframe(
                 value = build_config_df(config),
@@ -527,12 +755,24 @@ def build_main_page(specimen="cervix"):
                 elem_id="cytolone-image-input"
             )
             gr.HTML(
-                "",
-                js_on_load=build_iphone_camera_preference_js(config["WEBCAM_IMAGE_SIZE"]),
+                '<span aria-hidden="true" style="display:none"></span>',
+                js_on_load=build_iphone_camera_preference_js(
+                    config["WEBCAM_IMAGE_SIZE"]
+                ),
+            )
+            gr.HTML(
+                '<span aria-hidden="true" style="display:none"></span>',
+                js_on_load=HANDS_FREE_CAPTURE_BRIDGE_JS,
             )
             capture_payload = gr.Textbox(
                 value="",
                 visible=False,
+            )
+
+            image_input.change(
+                fn=remember_handsfree_image,
+                inputs=image_input,
+                outputs=None,
             )
 
     submit_btn = gr.Button("Analyze", variant="primary")
@@ -548,26 +788,72 @@ def build_main_page(specimen="cervix"):
             )
 
     classify_event = submit_btn.click(
-        fn=partial(classify_with_current_config, specimen=specimen),
+        fn=classify_with_current_config,
         inputs=[
             question_selector,
             image_input,
             capture_payload,
+            specimen_selector,
+            external_output,
         ],
         outputs=label_output,
         js=CAPTURE_CURRENT_VIEW_JS,
         )
 
     classify_event.success(
-        fn=partial(generate_comments_with_current_config, specimen=specimen),
+        fn=generate_comments_with_current_config,
         inputs=[
             question_selector,
-            label_output
+            label_output,
+            specimen_selector,
             ],
         outputs=comment_output
         )
 
-    return question_selector, config_table, image_input, capture_payload
+    specimen_selector.change(
+        fn=sync_handsfree_settings,
+        inputs=[specimen_selector, question_selector],
+        outputs=None,
+    )
+    question_selector.change(
+        fn=sync_handsfree_settings,
+        inputs=[specimen_selector, question_selector],
+        outputs=None,
+    )
+    external_output.change(
+        fn=update_external_output,
+        inputs=[external_output, specimen_selector, question_selector],
+        outputs=g2_status,
+    )
+
+    remote_result = gr.State(None)
+    handsfree_timer = gr.Timer(0.4, active=True)
+    poll_event = handsfree_timer.tick(
+        fn=process_handsfree_tick,
+        inputs=None,
+        outputs=[
+            specimen_selector,
+            question_selector,
+            g2_status,
+            label_output,
+            remote_result,
+        ],
+        show_progress="hidden",
+    )
+    poll_event.success(
+        fn=generate_handsfree_comments,
+        inputs=remote_result,
+        outputs=comment_output,
+        show_progress="hidden",
+    )
+
+    return (
+        specimen_selector,
+        question_selector,
+        config_table,
+        image_input,
+        capture_payload,
+    )
 
 def build_model_download_page():
     gr.Markdown("# Model Download")
@@ -595,6 +881,7 @@ def apply_settings_and_refresh_main(language, model, llm_model, llm_gen, llm_thr
     return (*settings_outputs, *refresh_main_page())
 
 def run():
+    handsfree_bridge.reset()
     with gr.Blocks(title="CYTOLONE") as app:
         gr.HTML(f"<style>{PAGE_TABS_CSS}</style>", container=False, show_label=False)
         with gr.Tabs(selected="launcher", elem_id="page-tabs") as pages:
@@ -671,7 +958,12 @@ def run():
                 outputs=pages,
             )
 
-    app.launch()
+    handsfree_server = HandsfreeServer()
+    try:
+        handsfree_server.start()
+        app.launch()
+    finally:
+        handsfree_server.stop()
 
 if __name__ == "__main__":
     run()

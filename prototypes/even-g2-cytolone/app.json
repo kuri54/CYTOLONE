@@ -1,0 +1,11 @@
+{
+  "package_id": "com.cytolone.g2prototype",
+  "edition": "202601",
+  "name": "CYTOLONE HUD",
+  "version": "0.1.0",
+  "min_app_version": "0.1.0",
+  "tagline": "Hands-free cytology AI result display prototype.",
+  "description": "Displays concise CYTOLONE results and captures a human review category on Even G2.",
+  "author": "CYTOLONE",
+  "entrypoint": "index.html"
+}
