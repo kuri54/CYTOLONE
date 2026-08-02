@@ -9,6 +9,8 @@ _**"Always by you side."**_
 
 <br>
 
+|[English](./README.md)|
+
 ## ✨ 概要
 **CYTOLONE** (Cytology All-in-One) は、顕微鏡とAIをリアルタイムで連携させることで、**細胞検査士による子宮頸部細胞診のスクリーニングを支援するツール**です。
 従来のAI支援システムで必要とされていた**WSI（全スライド画像）作成を不要**とし、iPhoneとApple Silicon Macだけで運用可能な低コスト・高速AI支援を実現しました。
@@ -49,89 +51,52 @@ _**"Always by you side."**_
   <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
 
-### 📦 推奨インストール: GitHub Releases パッケージ
-通常利用ではこの方法を推奨します。Git clone、Homebrew、alias の設定は不要です。
+### 📦 macOSアプリのインストール
+通常利用では、GitHub Releases から Apple Silicon 用 DMG を取得してください。
+
+```text
+CYTOLONE-<version>-mac-arm64.dmg
+```
 
 1. [GitHub Releases ページ](https://github.com/kuri54/CYTOLONE/releases)を開きます。
-2. macOS Apple Silicon 用パッケージをダウンロードします。
-   ```text
-   CYTOLONE-<version>-mac-arm64.tar.gz
-   ```
-3. ダウンロードした `.tar.gz` をダブルクリックして展開します。
-4. 展開されたフォルダを開き、次のファイルをダブルクリックします。
-   ```text
-   install.command
-   ```
-5. インストール完了後、必要に応じて Terminal を再起動します。
-6. Terminal で次のコマンドを実行して起動します。
-   ```bash
-   cytolone
-   ```
+2. `.dmg` をダウンロードし、`CYTOLONE.app` を `Applications` にドラッグします。
+3. `CYTOLONE.app` をダブルクリックします。
 
-インストーラは CYTOLONE を次の場所に配置します。
-```text
-~/.local/share/cytolone/current
-```
+Apple Silicon Mac の macOS 13 以降に対応しています。
 
-また、次の起動用ラッパーを作成します。
-```text
-~/.local/bin/cytolone
-```
+### 🚀 初回起動と2回目以降
+初回起動時は、文字と進捗だけのシンプルな英語ネイティブセットアップ画面が
+表示されます。CYTOLONEの実行に必要な環境を準備し、完了後に既定のブラウザで
+CYTOLONE画面を開きます。モデルの取得は CYTOLONE ランチャーから行う
+別操作です。
 
-`uv` がすでにインストールされている場合、インストーラは既存の `uv` をそのまま使用します。`uv` がない場合のみ、公式の `uv` インストーラで導入します。Homebrew は使用しません。
+2回目以降は準備済みの環境を再利用します。CYTOLONE がすでに起動している場合に
+アプリを再度起動しても、サーバーを二重に起動せず、既存のCYTOLONE画面を開きます。
+セットアップとモデル取得が完了した後は、オフラインで利用できます。
 
-uv の仮想環境は通常、次の場所に作成されます。
-```text
-~/.local/share/cytolone/current/.venv
-```
+最初に CYTOLONE ランチャー画面が開きます。ランチャーから CYTOLONE Main、
+scale-check、Settings、Model Download を開けます。ナビゲーションバーには
+Launcher タブだけが表示されます。各ページへはランチャー内のボタンから移動し、
+**CYTOLONE Main** でカメラを選択して **Analyze** を押すと現在の視野を判定できます。
 
-アンインストールする場合は、次のファイルをダブルクリックします。
-```text
-uninstall.command
-```
+### 🔄 更新・終了・削除
+更新する場合は、新しい DMG を取得し、既存の `CYTOLONE.app` を新しいアプリに
+置き換えてください。ダウンロード済みのモデルと設定は保持されます。
 
-`uninstall.command` は CYTOLONE の配置先と `~/.local/bin/cytolone` だけを削除します。`uv` 本体、`uv` がインストールした Python、`uv` cache は削除しません。
+ブラウザのタブを閉じても CYTOLONE は停止しません。終了する場合は Dock の
+CYTOLONE アイコンを右クリックして **Quit** を選択してください。
 
-### 🛠 開発者向け / ソースからのインストール
-clone したソースツリーから CYTOLONE を実行したい場合はこちらを使用してください。
+通常のアプリ本体だけの削除では、まず Dock の CYTOLONE アイコンを右クリックして
+**Quit** を選び、その後 `CYTOLONE.app` をゴミ箱へ移してください。管理データは保持
+されます。
 
-1. Python 3.12 をインストールします。
+完全削除では、CYTOLONE を起動した状態で Dock の CYTOLONE アイコンを右クリックし、
+**Remove CYTOLONE Data…** を選んで確認を完了してください。削除が完了した後、
+`CYTOLONE.app` をゴミ箱へ移してください。
 
-   Mac には Python が標準でインストールされていますが、バージョンが古いため本アプリで使用する主要なライブラリを利用できません。
-
-   ```bash
-   brew install python@3.12
-   ```
-
-   [uv](https://github.com/astral-sh/uv) を使う場合:
-   ```bash
-   uv python install 3.12
-   ```
-
-2. リポジトリを clone し、ディレクトリに移動します。
-   ```bash
-   git clone https://github.com/kuri54/CYTOLONE.git
-   cd CYTOLONE
-   ```
-
-3. 依存関係をインストールします。
-
-   `uv` を使う場合:
-   ```bash
-   uv sync
-   ```
-
-   `venv` と `pip` を使う場合:
-   ```bash
-   python3.12 -m venv venv
-   source venv/bin/activate
-   pip install -e .
-   ```
-
-4. ソースツリーから起動します。
-   ```bash
-   uv run cytolone
-   ```
+セットアップを完了できない場合は、ネイティブ画面の **Retry Setup** を選び、Mac が
+インターネットに接続されていることを確認して再試行してください。解決しない場合は
+CYTOLONE を終了し、時間を置いて再度起動してください。
 
 ### ⚙️ アプリの設定
 デフォルト設定:
@@ -144,14 +109,7 @@ LLM_GEN_THRESHOLD = 0.8 ----- LLM出力を有効にする閾値
 WEBCAM_IMAGE_SIZE = 1024 ---- webcam入力画像サイズ
 ```
 
-ランチャーから設定を変更できます。`cytolone` または `uv run cytolone` を実行し、**Settings** を開いてください。
-
-CLI コマンドも引き続き利用できます。
-```bash
-cytolone-config --list
-cytolone-config --LANGUAGE ja
-cytolone-config --reset
-```
+CYTOLONE ランチャーから **Settings** を開いて設定を変更できます。
 
 ⚠️ Warning:
 > `LLM_GEN` を `True` にする場合は、Mac が少なくとも **64GB 以上のユニファイドメモリ**を搭載している場合のみにしてください。メモリが少ない場合は Mac がクラッシュする可能性があります。
@@ -159,69 +117,20 @@ cytolone-config --reset
 `WEBCAM_IMAGE_SIZE` はこのアプリで最も重要な設定です。設定方法は[こちらの手順](/CYTOLONE/scale_check/README_JA.md)を確認してください。
 
 ### ⬇️ モデルのダウンロード
-ランチャーからモデルをダウンロードできます。`cytolone` または `uv run cytolone` を実行し、**Model Download** を開いてください。
+CYTOLONE ランチャーから **Model Download** を開いてモデルをダウンロードできます。
 
 すでにインストール済みのモデルは自動的にスキップされます。再ダウンロードしたい場合のみ **Force re-download** を使用してください。
-
-CLI コマンドも引き続き利用できます。
-```bash
-download-model
-```
 
 自動的に必要なモデルがダウンロードされます。`LLM_GEN` が `False` の場合、言語モデルはダウンロードされません。LLM 機能を利用したい場合は、設定変更後に再度ダウンロードしてください。
 
 ⚠️ Warning:
 > モデルのダウンロードには**ネット接続が必要**です。
-> オフライン環境の場合は、一時的にネットワークに繋げるか、別のネットワークに繋がった PC で以下のリンクからモデルをダウンロードし、指定のディレクトリに配置してください。
+### 🌐 ネットワークとオフライン利用
+DMG の取得、アプリの初回セットアップ、モデルのダウンロードにはネットワークが
+必要です。CYTOLONE はバックグラウンド更新確認を行わず、Tailscale、Taildrive、
+Owlfile、ネットワーク共有の設定を変更しません。
 
-リンク:
-[kuri54/mlx-CYTOLONE-v1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1)
-[kuri54/mlx-CYTOLONE-v1.1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1)
-[mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)
-[mlx-community/gpt-oss-120b-MXFP4-Q4](https://huggingface.co/mlx-community/gpt-oss-120b-MXFP4-Q4)
-[mlx-community/gpt-oss-20b-MXFP4-Q8](https://huggingface.co/mlx-community/gpt-oss-20b-MXFP4-Q8)
-
-配置:
-```text
-CYTOLONE/mlx-models/kuri54/mlx-CYTOLONE-v1/
-CYTOLONE/mlx-models/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit/
-```
-
-### 🚀 アプリの起動
-パッケージ利用者:
-```bash
-cytolone
-```
-
-インストール先で直接起動する場合:
-```bash
-cd ~/.local/share/cytolone/current
-uv run cytolone
-```
-
-ソースツリーから起動する場合:
-```bash
-uv run cytolone
-```
-
-- 最初に CYTOLONE ランチャー画面が開きます。
-- ランチャーから CYTOLONE Main、scale-check、Settings、Model Download を開けます。
-- ナビゲーションバーには Launcher タブだけが表示されます。各ページへはランチャー内のボタンから移動してください。
-- ターミナルに表示されたアドレスに Web ブラウザでアクセスしてください。
-- **CYTOLONE Main** を押すと、従来の解析画面が開きます。
-- カメラを選択し、**Analyze** ボタンをクリックすると現在の視野を判定できます。
-
-📝 Note:
-> 依存関係とモデルの準備が完了した後は、オフラインでも利用可能です。
-
-### 🌐 ネットワークとストレージに関する注意
-- GitHub Releases から `.tar.gz` を取得する時にネットワークを使用します。
-- `install.command` は `uv` が未インストールの場合のみネットワークを使用します。
-- 初回 `cytolone` 起動時に、`uv` が Python パッケージを取得するためネットワークを使用する場合があります。
-- モデルのダウンロードにはネットワークを使用し、ディスク容量も大きくなる場合があります。
-- CYTOLONE は Tailscale、Taildrive、Owlfile、ネットワーク共有設定を変更しません。
-- ホームディレクトリを別ツールで同期・共有している場合、`~/.local/share/cytolone/current/.venv` やダウンロード済みモデルの容量に注意してください。
-- トップレベルの `assets/` は GitHub README 表示用であり、release パッケージの実行には不要です。
+セットアップとモデル取得が完了した後は、オフラインで利用できます。
 
 ### 📷 カメラの連携
 赤丸部分をクリックしてiPhoneと連携してください。

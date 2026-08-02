@@ -2,24 +2,31 @@ import os
 import argparse
 import shutil
 from configparser import ConfigParser
+from pathlib import Path
+
+from CYTOLONE.app_paths import config_path
 
 CONFIG_PATH = "CYTOLONE/config.ini"
-DEFAULT_CONFIG_PATH = "CYTOLONE/default_config/default_config.ini"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "default_config.ini"
 
-def read_config(path=CONFIG_PATH, fallback_to_default=True):
+
+def read_config(path=None, fallback_to_default=True):
     config = ConfigParser()
     config.optionxform = str
+    path = config_path() if path is None else Path(path)
     if os.path.exists(path):
         config.read(path)
-    elif fallback_to_default and os.path.exists(DEFAULT_CONFIG_PATH):
+    elif fallback_to_default and DEFAULT_CONFIG_PATH.exists():
         config.read(DEFAULT_CONFIG_PATH)
     return config
 
-def write_config(config, path=CONFIG_PATH):
-    config_dir = os.path.dirname(path)
+
+def write_config(config, path=None):
+    path = config_path() if path is None else Path(path)
+    config_dir = path.parent
     if config_dir:
-        os.makedirs(config_dir, exist_ok=True)
-    with open(path, 'w') as configfile:
+        config_dir.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as configfile:
         config.write(configfile)
 
 def list_config():
@@ -29,8 +36,8 @@ def list_config():
         print(f"{key} = {config['SETTINGS'][key]}")
 
 def reset_config():
-    if os.path.exists(DEFAULT_CONFIG_PATH):
-        shutil.copy(DEFAULT_CONFIG_PATH, CONFIG_PATH)
+    if DEFAULT_CONFIG_PATH.exists():
+        shutil.copy(DEFAULT_CONFIG_PATH, config_path())
         print("Configuration has been reset to defaults.")
     else:
         print("default_config.ini not found.")

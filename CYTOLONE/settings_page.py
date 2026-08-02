@@ -1,6 +1,7 @@
 import gradio as gr
 from configparser import ConfigParser
 
+from CYTOLONE.app_paths import config_path
 from CYTOLONE.default_config.config_manager import read_config, write_config
 from CYTOLONE.model import APP_MODEL_CHOICES, LLM_MODEL_CHOICES
 
@@ -51,7 +52,7 @@ def apply_settings(language, model, llm_model, llm_gen, llm_threshold, webcam_im
     write_config(config)
 
     return (*get_settings_values(), (
-        "Settings saved to CYTOLONE/config.ini.\n"
+        f"Settings saved to {config_path()}.\n"
         "CYTOLONE Main and Model Download will use the updated settings immediately.\n"
         "If scale-check camera sizing looks stale, reload the app before using scale-check."
     ))
