@@ -63,6 +63,19 @@ CYTOLONE-<version>-mac-arm64.dmg
 
 The app requires an Apple Silicon Mac running macOS 13 or later.
 
+CYTOLONE is currently distributed without Apple Developer ID signing or
+notarization. On first launch, macOS may report that Apple cannot check the app
+for malicious software. If you downloaded the DMG from the official CYTOLONE
+GitHub Releases page:
+
+1. Try to open `CYTOLONE.app` once, then close the warning.
+2. Open **System Settings > Privacy & Security**.
+3. Scroll to **Security** and click **Open Anyway** for CYTOLONE.
+4. Confirm **Open**.
+
+This approval is required only for the first launch. See
+[Apple's instructions for opening an app from an unknown developer](https://support.apple.com/en-us/guide/mac-help/-mh40616/mac).
+
 ### 🚀 First Launch and Later Launches
 On first launch, CYTOLONE shows a simple English native setup window. It
 prepares the required local environment, then opens the CYTOLONE interface in
