@@ -2,7 +2,7 @@ import pandas as pd
 
 from CYTOLONE.default_config.config_manager import read_config
 
-def load_config(config_file_path="./CYTOLONE/config.ini"):
+def load_config(config_file_path=None):
     parser = read_config(config_file_path)
 
     return {

@@ -22,6 +22,7 @@ from CYTOLONE.download_models import download_models_with_status
 from CYTOLONE.scale_check.scale_checker import build_scale_checker_page
 from CYTOLONE.settings_page import apply_settings, build_settings_page, get_settings_values
 
+from CYTOLONE.app_paths import debug_path, models_path
 from CYTOLONE.util import load_config, build_config_df
 
 model_cache = {}
@@ -324,11 +325,10 @@ def prepare_inference_image(image, config):
     }
 
 def save_debug_preprocess_info(source, preprocess_info, config):
-    save_dir = "debug_images"
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    save_dir = debug_path()
+    save_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(f"{save_dir}/preprocess_info.txt", "w", encoding="utf-8") as file:
+    with open(save_dir / "preprocess_info.txt", "w", encoding="utf-8") as file:
         file.write(f"source = {source}\n")
         file.write(f"WEBCAM_IMAGE_SIZE = {config['WEBCAM_IMAGE_SIZE']}\n")
         file.write(f"scale = {preprocess_info['scale']:.6f}\n")
@@ -342,28 +342,28 @@ def classify_labels(choice_caption, image, specimen, classification_label, order
     image = as_pil_image(image)
 
     if config["DEBUG"]:
-        save_dir = "debug_images"
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+        save_dir = debug_path()
+        save_dir.mkdir(parents=True, exist_ok=True)
 
-        image.save(f"{save_dir}/original_image.jpg")
+        image.save(save_dir / "original_image.jpg")
 
     image, preprocess_info = prepare_inference_image(image, config)
 
     if config["DEBUG"]:
-        image.save(f"{save_dir}/cropped_image.jpg")
+        image.save(save_dir / "cropped_image.jpg")
         save_debug_preprocess_info(source, preprocess_info, config)
 
     model_path = get_model_id(config["MODEL"])
 
     if model_path not in model_cache:
+        model_dir = models_path() / model_path
         model = AutoModel.from_pretrained(
-            f"mlx_models/{model_path}",
+            model_dir,
             local_files_only=True,
             device_map="auto")
 
         processor = AutoProcessor.from_pretrained(
-            f"mlx_models/{model_path}",
+            model_dir,
             local_files_only=True
             )
 
@@ -406,7 +406,7 @@ def generate_comments(choice_caption, label_probs, specimen, config):
     llm_model_path = get_llm_id(config["LLM_MODEL"])
 
     if llm_model_path not in llm_model_cache:
-        model, tokenizer = load(f"mlx_models/{llm_model_path}")
+        model, tokenizer = load(str(models_path() / llm_model_path))
 
         llm_model_cache[llm_model_path] = model
         llm_tokenizer_cache[llm_model_path] = tokenizer
@@ -671,7 +671,16 @@ def run():
                 outputs=pages,
             )
 
-    app.launch()
+    launch_kwargs = {}
+    if os.environ.get("CYTOLONE_APP_MODE") == "1":
+        launch_kwargs.update(
+            server_name=os.environ.get("CYTOLONE_SERVER_HOST", "127.0.0.1"),
+            server_port=int(os.environ.get("CYTOLONE_SERVER_PORT", "7860")),
+            inbrowser=False,
+            prevent_thread_lock=False,
+        )
+
+    app.launch(**launch_kwargs)
 
 if __name__ == "__main__":
     run()

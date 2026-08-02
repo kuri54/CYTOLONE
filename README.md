@@ -51,89 +51,52 @@ Below is an example image used in the study:
   <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
 
-### 📦 Recommended Install: GitHub Releases Package
-This is the recommended setup for regular users. You do **not** need to clone this repository, install Homebrew, or create a shell alias.
+### 📦 Install the macOS App
+For general use, download the Apple Silicon DMG from GitHub Releases:
+```text
+CYTOLONE-<version>-mac-arm64.dmg
+```
 
 1. Open the [GitHub Releases page](https://github.com/kuri54/CYTOLONE/releases).
-2. Download the macOS Apple Silicon package:
-   ```text
-   CYTOLONE-<version>-mac-arm64.tar.gz
-   ```
-3. Double-click the downloaded `.tar.gz` file to extract it.
-4. Open the extracted folder and double-click:
-   ```text
-   install.command
-   ```
-5. When the installer finishes, restart Terminal if needed.
-6. Launch CYTOLONE from Terminal:
-   ```bash
-   cytolone
-   ```
+2. Download the Apple Silicon `.dmg` and drag `CYTOLONE.app` to `Applications`.
+3. Double-click `CYTOLONE.app`.
 
-The installer places CYTOLONE in:
-```text
-~/.local/share/cytolone/current
-```
+The app requires an Apple Silicon Mac running macOS 13 or later.
 
-It also creates this launcher:
-```text
-~/.local/bin/cytolone
-```
+### 🚀 First Launch and Later Launches
+On first launch, CYTOLONE shows a simple English native setup window. It
+prepares the required local environment, then opens the CYTOLONE interface in
+your default browser. Model download is a separate action
+from the CYTOLONE launcher.
 
-If `uv` is already installed, the installer uses it as-is. If `uv` is not installed, the installer installs `uv` using the official `uv` installer. It does not use Homebrew.
+Later launches reuse the prepared environment. If CYTOLONE is already running,
+launching the app again opens the existing CYTOLONE interface without starting a
+second server. After setup and model download are complete, CYTOLONE can be
+used offline.
 
-The project virtual environment is normally created at:
-```text
-~/.local/share/cytolone/current/.venv
-```
+The CYTOLONE launcher opens first. From the launcher, you can open CYTOLONE
+Main, scale-check, Settings, and Model Download. Only the Launcher tab is shown
+in the navigation bar; use the launcher buttons to open each page. Click
+**CYTOLONE Main** to open the existing analysis screen, then select your camera
+and click **Analyze** to evaluate the current view.
 
-To uninstall CYTOLONE, double-click:
-```text
-uninstall.command
-```
+### 🔄 Update, Quit, and Removal
+To update CYTOLONE, download the newer DMG and replace the existing
+`CYTOLONE.app` with the new app. Downloaded models and settings are preserved.
 
-`uninstall.command` removes only the CYTOLONE install directory and the `~/.local/bin/cytolone` launcher. It does **not** remove `uv`, Python installed by `uv`, or the `uv` cache.
+Closing the browser tab does not stop CYTOLONE. To stop it, right-click the
+CYTOLONE icon in the Dock and choose **Quit**.
 
-### 🛠 Developer / Source Install
-Use this method if you want to run CYTOLONE from a cloned source checkout.
+For normal app-only removal, first choose **Quit** from the CYTOLONE Dock icon,
+then move `CYTOLONE.app` to the Trash. Managed models and settings remain.
 
-1. Install Python 3.12.
+For complete removal, while CYTOLONE is running, right-click its Dock icon,
+choose **Remove CYTOLONE Data…**, and complete the confirmation. After the
+removal finishes, move `CYTOLONE.app` to the Trash.
 
-   macOS includes Python, but the preinstalled version is too old for this app.
-
-   ```bash
-   brew install python@3.12
-   ```
-
-   For [uv](https://github.com/astral-sh/uv) users:
-   ```bash
-   uv python install 3.12
-   ```
-
-2. Clone this repository and move into it:
-   ```bash
-   git clone https://github.com/kuri54/CYTOLONE.git
-   cd CYTOLONE
-   ```
-
-3. Install dependencies.
-
-   With `uv`:
-   ```bash
-   uv sync
-   ```
-
-   With `venv` and `pip`:
-   ```bash
-   python3.12 -m venv venv
-   source venv/bin/activate
-   pip install -e .
-   ```
-
-4. Launch from the source checkout:
-   ```bash
-   uv run cytolone
-   ```
+If setup cannot be completed, choose **Retry Setup** in the native window and
+check that the Mac is connected to the internet. If the problem continues,
+quit CYTOLONE and try launching it again later.
 
 ### ⚙️ App Settings
 Default settings:
@@ -146,14 +109,7 @@ LLM_GEN_THRESHOLD = 0.8 ----- Threshold for enabling LLM output
 WEBCAM_IMAGE_SIZE = 1024 ---- Webcam input image size
 ```
 
-You can edit settings from the launcher. Run `cytolone` or `uv run cytolone`, then open **Settings**.
-
-The CLI commands remain available:
-```bash
-cytolone-config --list
-cytolone-config --LANGUAGE ja
-cytolone-config --reset
-```
+You can edit settings from the CYTOLONE launcher by opening **Settings**.
 
 ⚠️ Warning:
 > Enable `LLM_GEN` **only if your Mac has at least 64GB of unified memory**.
@@ -162,69 +118,21 @@ cytolone-config --reset
 `WEBCAM_IMAGE_SIZE` is the **most critical setting** in this app. Please check [this guide](/CYTOLONE/scale_check/README.md) for details.
 
 ### ⬇️ Model Download
-You can download models from the launcher. Run `cytolone` or `uv run cytolone`, then open **Model Download**.
+You can download models from the CYTOLONE launcher by opening **Model Download**.
 
 Already installed models are skipped automatically. Use **Force re-download** only when you want to download again.
-
-The CLI command remains available:
-```bash
-download-model
-```
 
 Required models will be downloaded automatically. If `LLM_GEN` is set to `False`, **language models will not be downloaded**. To use LLM features, change the setting to `True` and download models again.
 
 ⚠️ Warning:
 > Model download **requires an internet connection**.
-> For offline environments, temporarily connect to the internet or manually download the models on another PC and place them in the specified directories.
 
-Download links:
-[kuri54/mlx-CYTOLONE-v1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1)
-[kuri54/mlx-CYTOLONE-v1.1](https://huggingface.co/kuri54/mlx-CYTOLONE-v1.1)
-[mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit)
-[mlx-community/gpt-oss-120b-MXFP4-Q4](https://huggingface.co/mlx-community/gpt-oss-120b-MXFP4-Q4)
-[mlx-community/gpt-oss-20b-MXFP4-Q8](https://huggingface.co/mlx-community/gpt-oss-20b-MXFP4-Q8)
+### 🌐 Network and Offline Use
+Downloading the DMG, preparing the app environment, and downloading models
+require network access. CYTOLONE does not perform background update checks and
+does not modify Tailscale, Taildrive, Owlfile, or network sharing settings.
 
-Place the models in the following directories:
-```text
-CYTOLONE/mlx-models/kuri54/mlx-CYTOLONE-v1/
-CYTOLONE/mlx-models/mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit/
-```
-
-### 🚀 Launch the App
-For package users:
-```bash
-cytolone
-```
-
-To run directly from the installed package directory:
-```bash
-cd ~/.local/share/cytolone/current
-uv run cytolone
-```
-
-For source checkout users:
-```bash
-uv run cytolone
-```
-
-- The CYTOLONE launcher opens first.
-- From the launcher, you can open CYTOLONE Main, scale-check, Settings, and Model Download.
-- Only the Launcher tab is shown in the navigation bar; use the launcher buttons to open each page.
-- Open the URL displayed in the terminal in your web browser.
-- Click **CYTOLONE Main** to open the existing analysis screen.
-- Select your camera and click **Analyze** to evaluate the current view.
-
-📝 Note:
-> After dependencies and models are installed, CYTOLONE can run offline.
-
-### 🌐 Network and Storage Notes
-- Downloading the `.tar.gz` package from GitHub Releases requires network access.
-- `install.command` uses the network only when `uv` is not already installed.
-- The first `cytolone` launch may use the network while `uv` installs Python packages.
-- Model download uses the network and can require substantial disk space.
-- CYTOLONE does not modify Tailscale, Taildrive, Owlfile, or network sharing settings.
-- If your home directory is synced or shared by another tool, note that `~/.local/share/cytolone/current/.venv` and downloaded models can be large.
-- The top-level `assets/` directory is used for GitHub README images and is not required in the release package.
+After setup and model download are complete, CYTOLONE can be used offline.
 
 <br>
 

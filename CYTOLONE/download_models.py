@@ -5,6 +5,7 @@ from huggingface_hub import snapshot_download
 
 from CYTOLONE.model import get_model_id, get_llm_id
 
+from CYTOLONE.app_paths import models_path
 from CYTOLONE.util import load_config
 
 def download_and_flatten(model_id: str, base_output_dir: Path):
@@ -37,7 +38,8 @@ def get_download_targets(config=None):
 
     return targets
 
-def download_models(config=None, output_root=Path("mlx_models"), force=False):
+def download_models(config=None, output_root=None, force=False):
+    output_root = models_path() if output_root is None else Path(output_root)
     targets = get_download_targets(config)
     downloaded = []
 
@@ -52,7 +54,7 @@ def download_models(config=None, output_root=Path("mlx_models"), force=False):
 def download_models_with_status(force=False):
     config = load_config()
     targets = get_download_targets(config)
-    output_root = Path("mlx_models")
+    output_root = models_path()
 
     yield (
         "Checking models...\n"

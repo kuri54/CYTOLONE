@@ -6,10 +6,11 @@ import gradio as gr
 import numpy as np
 from PIL import Image, ImageDraw
 
+from CYTOLONE.app_paths import config_path
 from CYTOLONE.default_config.config_manager import read_config, write_config
 from CYTOLONE.util import load_config
 
-IMAGE_DIR = Path("CYTOLONE/scale_check/default_images")
+IMAGE_DIR = Path(__file__).resolve().parent / "default_images"
 REFERENCE_IMAGE_FILES = {
     "Image 1": IMAGE_DIR / "image1.jpg",
     "Image 2": IMAGE_DIR / "image2.jpg",
@@ -317,7 +318,7 @@ def apply_scale_to_config(scale):
         )
 
     message = (
-        "✅ Updated CYTOLONE/config.ini\n"
+        f"✅ Updated {config_path()}\n"
         f"WEBCAM_IMAGE_SIZE = {recommended_input_size}\n\n"
         f"Equivalent command:\n{command}"
     )
