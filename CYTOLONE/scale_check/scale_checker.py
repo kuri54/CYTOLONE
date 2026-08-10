@@ -20,6 +20,194 @@ TARGET_SIZE = 1024
 MIN_SCALE = 0.5
 MAX_SCALE = 2.0
 
+LOUPE_ZOOM = 5
+LOUPE_SIZE = 180
+SEED_RADIUS = 6
+MIN_NUCLEUS_AREA = 12
+MAX_NUCLEUS_AREA = 3500
+LOCAL_BACKGROUND_SIGMA = 7
+LARGE_NUCLEUS_BACKGROUND_SIGMA = 14
+MIN_BROAD_MARKER_CONTRAST_RATIO = 1.8
+MIN_MARKER_OVERLAP = 2
+SOFT_DARKNESS_RATIO = 0.45
+MAX_SOFT_EXPANSION = 3.0
+EXPANSION_CIRCULARITY_FLOOR = 0.35
+EXPANSION_ASPECT_LIMIT = 2.4
+
+SCALE_CHECKER_LOUPE_CSS = f"""
+.scale-checker-loupe {{
+    position: fixed;
+    z-index: 10000;
+    width: {LOUPE_SIZE}px;
+    height: {LOUPE_SIZE}px;
+    display: none;
+    pointer-events: none;
+    border: 3px solid #ff4b4b;
+    border-radius: 50%;
+    box-sizing: border-box;
+    background-color: #222;
+    background-repeat: no-repeat;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}}
+
+.scale-checker-loupe.is-visible {{
+    display: block;
+}}
+
+.scale-checker-loupe::before,
+.scale-checker-loupe::after {{
+    position: absolute;
+    z-index: 1;
+    background: rgba(255, 75, 75, 0.9);
+    content: "";
+    pointer-events: none;
+}}
+
+.scale-checker-loupe::before {{
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    transform: translateY(-50%);
+}}
+
+.scale-checker-loupe::after {{
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 100%;
+    transform: translateX(-50%);
+}}
+"""
+
+SCALE_CHECKER_LOUPE_JS = f"""
+(() => {{
+    const targetSelectors = [
+        "#scale-check-reference-image",
+        "#scale-check-input-image",
+    ];
+    const loupeSize = {LOUPE_SIZE};
+    const zoom = {LOUPE_ZOOM};
+
+    const hideLoupe = (loupe) => loupe.classList.remove("is-visible");
+
+    const getImageContentPoint = (image, event) => {{
+        if (!image.complete || !image.naturalWidth || !image.naturalHeight) {{
+            return null;
+        }}
+
+        const rect = image.getBoundingClientRect();
+        if (!rect.width || !rect.height) {{
+            return null;
+        }}
+
+        const imageRatio = image.naturalWidth / image.naturalHeight;
+        const boxRatio = rect.width / rect.height;
+        let contentWidth = rect.width;
+        let contentHeight = rect.height;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (boxRatio > imageRatio) {{
+            contentHeight = rect.height;
+            contentWidth = contentHeight * imageRatio;
+            offsetX = (rect.width - contentWidth) / 2;
+        }} else if (boxRatio < imageRatio) {{
+            contentWidth = rect.width;
+            contentHeight = contentWidth / imageRatio;
+            offsetY = (rect.height - contentHeight) / 2;
+        }}
+
+        const displayX = event.clientX - rect.left - offsetX;
+        const displayY = event.clientY - rect.top - offsetY;
+        if (
+            displayX < 0 ||
+            displayY < 0 ||
+            displayX > contentWidth ||
+            displayY > contentHeight
+        ) {{
+            return null;
+        }}
+
+        return {{
+            displayX,
+            displayY,
+            contentWidth,
+            contentHeight,
+        }};
+    }};
+
+    const attachLoupe = (root) => {{
+        const image = root.querySelector("img");
+        if (!image) {{
+            return;
+        }}
+        if (root.__scaleCheckerLoupe?.image === image) {{
+            return;
+        }}
+        root.__scaleCheckerLoupe?.destroy();
+
+        const loupe = document.createElement("div");
+        loupe.className = "scale-checker-loupe";
+        loupe.setAttribute("aria-hidden", "true");
+        document.body.appendChild(loupe);
+
+        let source = null;
+        const hide = () => hideLoupe(loupe);
+        const move = (event) => {{
+            const point = getImageContentPoint(image, event);
+            if (!point) {{
+                hide();
+                return;
+            }}
+
+            const imageSource = image.currentSrc || image.src;
+            if (!imageSource) {{
+                hide();
+                return;
+            }}
+            if (source !== imageSource) {{
+                source = imageSource;
+                loupe.style.backgroundImage = `url("${{imageSource.replace(/"/g, '\\\\"')}}")`;
+            }}
+
+            loupe.style.left = `${{event.clientX - loupeSize / 2}}px`;
+            loupe.style.top = `${{event.clientY - loupeSize / 2}}px`;
+            loupe.style.backgroundSize = `${{point.contentWidth * zoom}}px ${{point.contentHeight * zoom}}px`;
+            loupe.style.backgroundPosition = `${{loupeSize / 2 - point.displayX * zoom}}px ${{loupeSize / 2 - point.displayY * zoom}}px`;
+            loupe.classList.add("is-visible");
+        }};
+
+        image.addEventListener("pointermove", move, {{ passive: true }});
+        image.addEventListener("pointerleave", hide, {{ passive: true }});
+        image.addEventListener("pointercancel", hide, {{ passive: true }});
+        root.__scaleCheckerLoupe = {{
+            image,
+            destroy: () => {{
+                image.removeEventListener("pointermove", move);
+                image.removeEventListener("pointerleave", hide);
+                image.removeEventListener("pointercancel", hide);
+                loupe.remove();
+            }},
+        }};
+    }};
+
+    const attachAll = () => targetSelectors.forEach((selector) => {{
+        const root = document.querySelector(selector);
+        if (root) {{
+            attachLoupe(root);
+        }}
+    }});
+
+    attachAll();
+    const observer = new MutationObserver(attachAll);
+    observer.observe(document.body, {{ childList: true, subtree: true }});
+    window.setTimeout(attachAll, 100);
+    window.setTimeout(attachAll, 500);
+}})();
+"""
+
 
 def load_image(name):
     return Image.open(REFERENCE_IMAGE_FILES[name]).convert("RGB")
@@ -130,6 +318,174 @@ def draw_click_marker(image, x, y):
     return marked
 
 
+def _selection_failure(reason):
+    return (
+        None,
+        None,
+        f"No confident nucleus was found at the clicked seed ({reason}). "
+        "Please click the center of another squamous epithelial nucleus.",
+    )
+
+
+def _seeded_nucleus_mask(patch, px, py, seed_radius=SEED_RADIUS):
+    """Extract a local nucleus component using the click as a marker.
+
+    The dark component is estimated from the local lightness distribution, not
+    from the median color of the click seed. A softer mask can then grow that
+    marker to the visible boundary. Every accepted component must intersect the
+    click marker; no spatially nearest component is eligible.
+    """
+    lab = cv2.cvtColor(patch, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lightness = lab[:, :, 0]
+    seed = np.zeros(lightness.shape, dtype=np.uint8)
+    cv2.circle(seed, (px, py), seed_radius, 1, -1)
+    seed_pixels = seed.astype(bool)
+    if not np.any(seed_pixels):
+        return None, None, None, "The click marker is outside the image patch."
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+
+    def find_marker_core(darkness):
+        darkness_min = float(np.min(darkness))
+        darkness_shifted = np.clip(darkness - darkness_min, 0.0, 255.0).astype(np.uint8)
+        otsu_value, _ = cv2.threshold(
+            darkness_shifted, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        core_threshold = max(
+            float(otsu_value) + darkness_min,
+            float(np.percentile(darkness, 75)),
+        )
+        if not np.isfinite(core_threshold) or core_threshold <= darkness_min:
+            return None, None, None, "No local nuclear contrast was found around the click."
+
+        core_binary = cv2.morphologyEx(
+            (darkness >= core_threshold).astype(np.uint8), cv2.MORPH_OPEN, kernel
+        )
+        core_count, core_labels, _, _ = cv2.connectedComponentsWithStats(
+            core_binary, connectivity=8
+        )
+        marker_components = []
+        for label in range(1, core_count):
+            component = core_labels == label
+            overlap = int(np.count_nonzero(component & seed_pixels))
+            if overlap >= MIN_MARKER_OVERLAP:
+                marker_components.append((overlap, int(np.count_nonzero(component)), label))
+        if not marker_components:
+            return None, None, core_threshold, "No stained foreground component intersects the click marker."
+
+        marker_components.sort(reverse=True)
+        _, core_area, selected_label = marker_components[0]
+        return core_labels == selected_label, core_area, core_threshold, ""
+
+    core_mask = None
+    core_area = None
+    core_threshold = None
+    darkness = None
+    error = "No stained foreground component intersects the click marker."
+    for sigma in (LOCAL_BACKGROUND_SIGMA, LARGE_NUCLEUS_BACKGROUND_SIGMA):
+        local_background = cv2.GaussianBlur(lightness, (0, 0), sigma)
+        darkness = local_background - lightness
+        core_mask, core_area, core_threshold, error = find_marker_core(darkness)
+        if core_mask is not None and sigma == LARGE_NUCLEUS_BACKGROUND_SIGMA:
+            marker_contrast = float(np.median(darkness[seed_pixels]))
+            if marker_contrast < core_threshold * MIN_BROAD_MARKER_CONTRAST_RATIO:
+                core_mask = None
+                error = "The broad foreground candidate has insufficient marker contrast."
+        if core_mask is not None:
+            break
+    if core_mask is None:
+        return None, None, darkness, error
+
+    if core_area < MIN_NUCLEUS_AREA or core_area > MAX_NUCLEUS_AREA:
+        return None, None, darkness, "The clicked foreground component has no plausible nucleus scale."
+
+    soft_threshold = core_threshold * SOFT_DARKNESS_RATIO
+    soft_binary = cv2.morphologyEx(
+        (darkness >= soft_threshold).astype(np.uint8), cv2.MORPH_OPEN, kernel
+    )
+    soft_count, soft_labels, _, _ = cv2.connectedComponentsWithStats(
+        soft_binary, connectivity=8
+    )
+    selected_mask = core_mask
+    soft_area = core_area
+    if soft_count > 1:
+        soft_components = []
+        for label in range(1, soft_count):
+            component = soft_labels == label
+            core_overlap = int(np.count_nonzero(component & core_mask))
+            if core_overlap:
+                soft_components.append((core_overlap, int(np.count_nonzero(component)), label))
+        if soft_components:
+            soft_components.sort(reverse=True)
+            core_overlap, candidate_area, soft_label = soft_components[0]
+            if core_overlap >= max(MIN_MARKER_OVERLAP, int(round(core_area * 0.8))):
+                selected_mask = soft_labels == soft_label
+                soft_area = candidate_area
+
+    expansion = soft_area / float(core_area)
+
+    def mask_geometry(mask):
+        contours, _ = cv2.findContours(
+            mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            return 0.0, float("inf")
+        contour = max(contours, key=cv2.contourArea)
+        perimeter = cv2.arcLength(contour, True)
+        area = float(np.count_nonzero(mask))
+        circularity = 4.0 * math.pi * area / (perimeter * perimeter) if perimeter else 0.0
+        _, _, width, height = cv2.boundingRect(contour)
+        aspect_ratio = max(width, height) / max(1, min(width, height))
+        return circularity, aspect_ratio
+
+    if selected_mask is not core_mask and expansion > MAX_SOFT_EXPANSION:
+        circularity, aspect_ratio = mask_geometry(selected_mask)
+        if (
+            circularity < EXPANSION_CIRCULARITY_FLOOR
+            or aspect_ratio > EXPANSION_ASPECT_LIMIT
+        ):
+            return (
+                None,
+                None,
+                darkness,
+                "The click-connected foreground expands into an ambiguous surrounding region.",
+            )
+
+    area = int(np.count_nonzero(selected_mask))
+    if area < MIN_NUCLEUS_AREA or area > MAX_NUCLEUS_AREA:
+        return None, None, darkness, "The clicked foreground component has no plausible nucleus scale."
+
+    component_y, component_x = np.where(selected_mask)
+    if (
+        component_x.min() <= 0
+        or component_y.min() <= 0
+        or component_x.max() >= selected_mask.shape[1] - 1
+        or component_y.max() >= selected_mask.shape[0] - 1
+    ):
+        return None, None, darkness, "The selected region is clipped by the local crop."
+
+    return selected_mask, None, darkness, ""
+
+
+def _render_nucleus_preview(patch, selected_mask, px, py, seed_radius):
+    preview = patch.copy()
+    dimmed = (preview.astype(np.float32) * 0.35).astype(np.uint8)
+    preview[~selected_mask] = dimmed[~selected_mask]
+
+    highlight = np.array([45, 220, 80], dtype=np.uint8)
+    preview[selected_mask] = (
+        preview[selected_mask].astype(np.float32) * 0.45 + highlight.astype(np.float32) * 0.55
+    ).astype(np.uint8)
+
+    contours, _ = cv2.findContours(selected_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(preview, contours, -1, (0, 255, 0), 2)
+    cv2.circle(preview, (px, py), seed_radius, (255, 190, 0), 1)
+    cv2.circle(preview, (px, py), 3, (255, 0, 0), -1)
+    cv2.line(preview, (px - 8, py), (px + 8, py), (255, 0, 0), 1)
+    cv2.line(preview, (px, py - 8), (px, py + 8), (255, 0, 0), 1)
+    return Image.fromarray(preview)
+
+
 def extract_nucleus_from_click(image, x, y, patch_radius=96):
     image = normalize_image(image)
     if image is None:
@@ -137,6 +493,9 @@ def extract_nucleus_from_click(image, x, y, patch_radius=96):
 
     np_img = np.array(image)
     h, w = np_img.shape[:2]
+    if w == 0 or h == 0:
+        return None, None, "Image is empty."
+
     x = int(np.clip(x, 0, w - 1))
     y = int(np.clip(y, 0, h - 1))
 
@@ -144,75 +503,20 @@ def extract_nucleus_from_click(image, x, y, patch_radius=96):
     y1 = max(y - patch_radius, 0)
     x2 = min(x + patch_radius + 1, w)
     y2 = min(y + patch_radius + 1, h)
-
     patch = np_img[y1:y2, x1:x2]
-    if patch.size == 0:
-        return None, None, "No patch available around the selected point."
-
-    gray = cv2.cvtColor(patch, cv2.COLOR_RGB2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
-    _, binary_inv = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    cleaned = cv2.morphologyEx(binary_inv, cv2.MORPH_OPEN, kernel, iterations=1)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(cleaned, connectivity=8)
     px = x - x1
     py = y - y1
+    if patch.size == 0 or not (0 <= px < patch.shape[1] and 0 <= py < patch.shape[0]):
+        return _selection_failure("no local image patch is available")
 
-    candidates = []
-    min_area = 40
-    max_area = 3500
+    selected_mask, _, _, error = _seeded_nucleus_mask(patch, px, py)
+    if error:
+        return _selection_failure(error)
 
-    for label_id in range(1, num_labels):
-        area = int(stats[label_id, cv2.CC_STAT_AREA])
-        if area < min_area or area > max_area:
-            continue
-
-        mask = (labels == label_id).astype(np.uint8)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            continue
-
-        contour = max(contours, key=cv2.contourArea)
-        perimeter = cv2.arcLength(contour, True)
-        circularity = (4.0 * math.pi * area / (perimeter * perimeter)) if perimeter > 0 else 0.0
-        if circularity < 0.2:
-            continue
-
-        centroid = centroids[label_id]
-        candidates.append(
-            {
-                "label": label_id,
-                "area": area,
-                "mask": mask.astype(bool),
-                "contour": contour,
-                "centroid": (float(centroid[0]), float(centroid[1])),
-            }
-        )
-
-    if not candidates:
-        return None, None, "No valid nucleus candidate found. Please click another squamous epithelial nucleus."
-
-    selected_label = int(labels[py, px]) if 0 <= py < labels.shape[0] and 0 <= px < labels.shape[1] else 0
-    selected = next((c for c in candidates if c["label"] == selected_label), None)
-
-    if selected is None:
-        selected = min(
-            candidates,
-            key=lambda c: (c["centroid"][0] - px) ** 2 + (c["centroid"][1] - py) ** 2,
-        )
-
-    diameter = math.sqrt(4.0 * selected["area"] / math.pi)
-    preview = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
-    preview[~selected["mask"]] = (preview[~selected["mask"]] * 0.35).astype(np.uint8)
-    cv2.drawContours(preview, [selected["contour"]], -1, (0, 255, 0), 2)
-    cv2.circle(preview, (px, py), 3, (255, 0, 0), -1)
-
-    return Image.fromarray(preview), diameter, ""
+    area = int(np.count_nonzero(selected_mask))
+    diameter = math.sqrt(4.0 * area / math.pi)
+    preview = _render_nucleus_preview(patch, selected_mask, px, py, SEED_RADIUS)
+    return preview, diameter, ""
 
 
 def update_reference_for_semi_auto(name):
@@ -347,6 +651,15 @@ def build_scale_checker_page():
                 label="Select Reference Image",
             )
 
+            gr.HTML(
+                value=f"<style>{SCALE_CHECKER_LOUPE_CSS}</style>",
+                js_on_load=SCALE_CHECKER_LOUPE_JS,
+                visible="hidden",
+                show_label=False,
+                container=False,
+                min_height=0,
+            )
+
             with gr.Row():
                 semi_reference_image = gr.Image(
                     width=360,
@@ -355,6 +668,8 @@ def build_scale_checker_page():
                     label="Reference (Click Squamous Nucleus Center)",
                     value=load_image("Image 1"),
                     interactive=True,
+                    elem_id="scale-check-reference-image",
+                    elem_classes=["scale-check-click-image"],
                 )
 
                 semi_input_image = gr.Image(
@@ -374,6 +689,8 @@ def build_scale_checker_page():
                     ),
                     label="Input (Capture/Upload then Click Squamous Nucleus Center)",
                     interactive=True,
+                    elem_id="scale-check-input-image",
+                    elem_classes=["scale-check-click-image"],
                 )
 
             with gr.Row():
