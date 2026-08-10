@@ -44,14 +44,17 @@
     - **Semi-Auto** tab:
         - Click one nucleus center in each image and estimate scale automatically.
         - Keep slider-based fine tuning before applying.
+        - A cursor-following loupe is shown over both images. The loupe is an
+          inspection aid only; the underlying image remains the single click
+          target, so the reported click coordinates stay in source-image space.
 
 - Semi-Auto Workflow
     1. Select a reference image.
     2. Capture/upload an input image with a 10x objective lens.
-    3. Click one **squamous epithelial nucleus center** on the reference image.
-    4. Click one **squamous epithelial nucleus center** on the input image.
-    5. Confirm the extracted nucleus previews.
-    6. If extraction fails, re-click another nucleus.
+    3. On the reference image, use the 4–6× loupe and fixed center crosshair to click one **squamous epithelial nucleus center**.
+    4. On the input image, use the loupe and center crosshair to click one **squamous epithelial nucleus center**.
+    5. Confirm the extracted nucleus previews, including the click point and the adopted mask.
+    6. If extraction fails or confidence is low, no diameter is returned; re-click another nucleus.
     7. Press **Estimate** to calculate scale.
     8. Fine-tune with the scale slider if needed.
     9. Press **Apply** to write `WEBCAM_IMAGE_SIZE` to `CYTOLONE/config.ini`.
