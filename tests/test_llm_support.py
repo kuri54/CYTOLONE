@@ -42,6 +42,7 @@ from CYTOLONE.label_caption import (
 )
 from CYTOLONE.llm_prompt import build_prompt_v2
 from CYTOLONE.llm_runtime import (
+    LLMRuntimeError,
     LocalLLMRuntime,
     MissingLLMModelError,
 )
@@ -356,15 +357,31 @@ class RuntimeAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             model_path = Path(temporary) / "qwen"
             make_model_directory(model_path)
-            tokenizer = Mock()
+            tokenizer = Mock(spec=["apply_chat_template"])
             tokenizer.apply_chat_template.return_value = "formatted prompt"
-            processor = types.SimpleNamespace(tokenizer=tokenizer)
+            model = types.SimpleNamespace(
+                config=types.SimpleNamespace(eos_token_id=151645)
+            )
             generated = types.SimpleNamespace(text="mock answer")
             qwen_module = types.SimpleNamespace(
-                load=Mock(return_value=(object(), processor)),
+                load=Mock(),
                 generate=Mock(return_value=generated),
             )
-            with patch.dict(sys.modules, {"mlx_vlm": qwen_module}):
+            qwen_utils = types.SimpleNamespace(
+                load_model=Mock(return_value=model),
+                StoppingCriteria=Mock(return_value="stopping criteria"),
+            )
+            tokenizer_utils = types.SimpleNamespace(
+                load_tokenizer=Mock(return_value=tokenizer)
+            )
+            with patch.dict(
+                sys.modules,
+                {
+                    "mlx_vlm": qwen_module,
+                    "mlx_vlm.utils": qwen_utils,
+                    "mlx_vlm.tokenizer_utils": tokenizer_utils,
+                },
+            ):
                 runtime = LocalLLMRuntime()
                 output = runtime.generate(
                     "qwen3.5-9b-4bit",
@@ -376,12 +393,21 @@ class RuntimeAdapterTests(unittest.TestCase):
                 )
 
             self.assertEqual(output, "mock answer")
+            qwen_module.load.assert_not_called()
+            qwen_utils.load_model.assert_called_once_with(model_path, lazy=True)
+            tokenizer_utils.load_tokenizer.assert_called_once_with(model_path)
+            qwen_utils.StoppingCriteria.assert_called_once_with(151645, tokenizer)
+            self.assertEqual(tokenizer.stopping_criteria, "stopping criteria")
             call = qwen_module.generate.call_args
             self.assertNotIn("image", call.kwargs)
             self.assertNotIn("enable_thinking", call.kwargs)
             self.assertEqual(call.kwargs["max_tokens"], 512)
             tokenizer.apply_chat_template.assert_called_once()
-            self.assertFalse(tokenizer.apply_chat_template.call_args.kwargs.get("enable_thinking", True))
+            self.assertFalse(
+                tokenizer.apply_chat_template.call_args.kwargs.get(
+                    "enable_thinking", True
+                )
+            )
 
     def test_switching_models_replaces_the_active_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -389,24 +415,78 @@ class RuntimeAdapterTests(unittest.TestCase):
             legacy_path = Path(temporary) / "legacy"
             make_model_directory(qwen_path)
             make_model_directory(legacy_path)
+            qwen_model = types.SimpleNamespace(
+                config=types.SimpleNamespace(eos_token_id=1)
+            )
+            qwen_tokenizer = Mock()
             qwen_module = types.SimpleNamespace(
-                load=Mock(return_value=("qwen-model", "qwen-tokenizer")),
+                load=Mock(),
                 generate=Mock(return_value="qwen answer"),
+            )
+            qwen_utils = types.SimpleNamespace(
+                load_model=Mock(return_value=qwen_model),
+                StoppingCriteria=Mock(),
+            )
+            tokenizer_utils = types.SimpleNamespace(
+                load_tokenizer=Mock(return_value=qwen_tokenizer)
             )
             legacy_module = types.SimpleNamespace(
                 load=Mock(return_value=("legacy-model", "legacy-tokenizer")),
                 generate=Mock(return_value="legacy answer"),
             )
-            with patch.dict(sys.modules, {"mlx_vlm": qwen_module, "mlx_lm": legacy_module}):
+            with patch.dict(
+                sys.modules,
+                {
+                    "mlx_vlm": qwen_module,
+                    "mlx_vlm.utils": qwen_utils,
+                    "mlx_vlm.tokenizer_utils": tokenizer_utils,
+                    "mlx_lm": legacy_module,
+                },
+            ):
                 runtime = LocalLLMRuntime()
                 runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
                 self.assertEqual(runtime.active_model_key, "qwen3.5-9b-4bit")
                 runtime.generate("gpt-oss-120b", legacy_path, [])
 
             self.assertEqual(runtime.active_model_key, "gpt-oss-120b")
-            self.assertEqual(qwen_module.load.call_count, 1)
+            qwen_module.load.assert_not_called()
+            qwen_utils.load_model.assert_called_once_with(qwen_path, lazy=True)
             self.assertEqual(legacy_module.load.call_count, 1)
             self.assertEqual(legacy_module.generate.call_count, 1)
+
+    def test_qwen_load_error_includes_underlying_one_line_detail(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            model_path = Path(temporary) / "qwen"
+            make_model_directory(model_path)
+            qwen_module = types.SimpleNamespace(load=Mock(), generate=Mock())
+            qwen_utils = types.SimpleNamespace(
+                load_model=Mock(
+                    side_effect=RuntimeError(
+                        "Metal allocation failed\nwhile loading weights"
+                    )
+                ),
+                StoppingCriteria=Mock(),
+            )
+            tokenizer_utils = types.SimpleNamespace(load_tokenizer=Mock())
+            with patch.dict(
+                sys.modules,
+                {
+                    "mlx_vlm": qwen_module,
+                    "mlx_vlm.utils": qwen_utils,
+                    "mlx_vlm.tokenizer_utils": tokenizer_utils,
+                },
+            ):
+                with self.assertRaises(LLMRuntimeError) as context:
+                    LocalLLMRuntime().generate(
+                        "qwen3.5-9b-4bit", model_path, []
+                    )
+
+            message = str(context.exception)
+            self.assertIn(
+                "RuntimeError: Metal allocation failed while loading weights",
+                message,
+            )
+            self.assertNotIn("force re-download", message)
 
     def test_missing_model_has_actionable_error(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -112,6 +112,26 @@ def _legacy_sampler(settings):
         return None
 
 
+def _load_text_only_vlm(model_path):
+    """Load an mlx-vlm model without its unused image processor."""
+    utils = importlib.import_module("mlx_vlm.utils")
+    tokenizer_utils = importlib.import_module("mlx_vlm.tokenizer_utils")
+    model_path = Path(model_path)
+    model = utils.load_model(model_path, lazy=True)
+    tokenizer = tokenizer_utils.load_tokenizer(model_path)
+    tokenizer.stopping_criteria = utils.StoppingCriteria(
+        getattr(model.config, "eos_token_id", None), tokenizer
+    )
+    return model, tokenizer
+
+
+def _exception_summary(exc, limit=300):
+    detail = " ".join(str(exc).split()) or "no detail provided"
+    if len(detail) > limit:
+        detail = f"{detail[: limit - 3]}..."
+    return f"{type(exc).__name__}: {detail}"
+
+
 class LocalLLMRuntime:
     """Lazy, single-active-model runtime for Qwen VLM and legacy MLX-LM."""
 
@@ -142,7 +162,10 @@ class LocalLLMRuntime:
         module_name = "mlx_vlm" if spec.runtime == "mlx-vlm" else "mlx_lm"
         try:
             module = importlib.import_module(module_name)
-            return module.load, module.generate
+            load_model = (
+                _load_text_only_vlm if spec.runtime == "mlx-vlm" else module.load
+            )
+            return load_model, module.generate
         except (ImportError, AttributeError) as exc:
             raise LLMRuntimeError(
                 f"The {spec.runtime} runtime for {spec.display_name} is unavailable. "
@@ -171,7 +194,10 @@ class LocalLLMRuntime:
         except Exception as exc:  # noqa: BLE001
             raise LLMRuntimeError(
                 f"Could not load {spec.display_name} from {model_path}. "
-                "Open Model Management and try a force re-download."
+                f"Load failed ({_exception_summary(exc)}). The model may be "
+                "incomplete, "
+                "incompatible, or exceed available memory. Open Model Management to "
+                "re-download it if the files are incomplete."
             ) from exc
         self._active_model_key = model_key
         self._generate = generate_text
