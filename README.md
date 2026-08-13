@@ -19,7 +19,7 @@ Key Features:
 - **Real-time support**: Provides results in less than 0.5 seconds
 - **WSI-free, low-cost operation**: No expensive scanners or GPUs required
 - **High-accuracy classification using hierarchical labeling**: Covers Anomaly, Malignancy, Bethesda, and Diagnosis categories
-- **Optional LLM-based findings generation**
+- **Optional local LLM-based supporting information**
 
 For more details, see the published paper:
 [🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
@@ -88,7 +88,7 @@ second server. After setup and model download are complete, CYTOLONE can be
 used offline.
 
 The CYTOLONE launcher opens first. From the launcher, you can open CYTOLONE
-Main, scale-check, Settings, and Model Download. Only the Launcher tab is shown
+Main, scale-check, Settings, and Model Management. Only the Launcher tab is shown
 in the navigation bar; use the launcher buttons to open each page. Click
 **CYTOLONE Main** to open the existing analysis screen, then select your camera
 and click **Analyze** to evaluate the current view.
@@ -111,41 +111,48 @@ If setup cannot be completed, choose **Retry Setup** in the native window and
 check that the Mac is connected to the internet. If the problem continues,
 quit CYTOLONE and try launching it again later.
 
-### ⚙️ App Settings
-Default settings:
-```text
-LANGUAGE = en --------------- App language setting (en or ja)
-MODEL = v1.1 ---------------- Model version to use (choose v1.0 or v1.1)
-LLM_MODEL = gpt-oss-20b ----- LLM to use (choose deepseek-r1 or gpt-oss-120b or gpt-oss-20b)
-LLM_GEN = False ------------- Enable or disable LLM-based findings generation
-LLM_GEN_THRESHOLD = 0.8 ----- Threshold for enabling LLM output
-WEBCAM_IMAGE_SIZE = 1024 ---- Webcam input image size
-```
+### ⚙️ Settings
+Choose the application model, language, LLM model, LLM on/off setting, and webcam
+image size from **Settings**. LLM generation is disabled by default. Model
+selection is always manual.
 
-You can edit settings from the CYTOLONE launcher by opening **Settings**.
+Model choices:
 
-⚠️ Warning:
-> Enable `LLM_GEN` **only if your Mac has at least 64GB of unified memory**.
-> Insufficient memory **may cause system crashes**.
+| Key | Repository | Download size | Preliminary unified-memory recommendation |
+|---|---|---:|---:|
+| `qwen3.5-9b-4bit` (default) | `mlx-community/Qwen3.5-9B-4bit` | 5.95 GB | 16 GB or more |
+| `qwen3.5-9b-8bit` | `mlx-community/Qwen3.5-9B-8bit` | 10.4 GB | 24 GB or more |
+| `qwen3.5-27b-5bit` | `mlx-community/Qwen3.5-27B-5bit` | 19.4 GB | 32 GB or more |
+| `qwen3.5-27b-8bit` | `mlx-community/Qwen3.5-27B-8bit` | 29.5 GB | 48 GB or more |
+| `gpt-oss-120b` (Legacy) | `mlx-community/gpt-oss-120b-MXFP4-Q4` | about 63 GB | 128 GB or more |
+
+The sizes and memory figures above are preliminary recommendations, not verified
+minimums. Validate the selected model on the target Mac before enabling LLM
+generation.
 
 `WEBCAM_IMAGE_SIZE` is the **most critical setting** in this app. Please check [this guide](/CYTOLONE/scale_check/README.md) for details.
 
-### ⬇️ Model Download
-You can download models from the CYTOLONE launcher by opening **Model Download**.
+### ⬇️ Model Management
+Open **Model Management** from the launcher. The page lists each available
+application model and LLM with its selected state, installation state, local size,
+download-size guidance, and preliminary memory guidance.
 
-Already installed models are skipped automatically. Use **Force re-download** only when you want to download again.
+Choose one application model or one LLM, then use its **Download** button. LLM
+generation may remain disabled while preparing an LLM. To remove one model, select
+it, choose **Delete**, and confirm the displayed model. There is no delete-all
+operation. Removing a model does not change Settings; download it again before
+using that model.
 
-Required models will be downloaded automatically. If `LLM_GEN` is set to `False`, **language models will not be downloaded**. To use LLM features, change the setting to `True` and download models again.
-
-⚠️ Warning:
-> Model download **requires an internet connection**.
+Downloading a model requires an internet connection. After setup and the models
+you need are ready, CYTOLONE can be used locally and offline.
 
 ### 🌐 Network and Offline Use
-Downloading the DMG, preparing the app environment, and downloading models
-require network access. CYTOLONE does not perform background update checks and
-does not modify Tailscale, Taildrive, Owlfile, or network sharing settings.
+Downloading the DMG, preparing the app environment, and downloading models require
+network access. CYTOLONE does not perform background update checks or change network
+sharing settings.
 
-After setup and model download are complete, CYTOLONE can be used offline.
+LLM output is supporting information for differential findings and is not a final
+diagnosis.
 
 <br>
 

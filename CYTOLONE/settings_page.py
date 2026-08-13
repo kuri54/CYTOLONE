@@ -1,26 +1,16 @@
 import gradio as gr
-from configparser import ConfigParser
 
 from CYTOLONE.app_paths import config_path
 from CYTOLONE.default_config.config_manager import read_config, write_config
-from CYTOLONE.model import APP_MODEL_CHOICES, LLM_MODEL_CHOICES
-
-
-CONFIG_KEYS = [
-    "LANGUAGE",
-    "MODEL",
-    "LLM_MODEL",
-    "LLM_GEN",
-    "LLM_GEN_THRESHOLD",
-    "WEBCAM_IMAGE_SIZE",
-    "DEBUG",
-]
+from CYTOLONE.model import (
+    APP_MODEL_CHOICES,
+    LLM_MODEL_DISPLAY_CHOICES,
+    LLM_MODEL_CHOICES,
+)
 
 
 def _settings_section():
     config = read_config()
-    if "SETTINGS" not in config:
-        config = read_config(path="CYTOLONE/default_config/default_config.ini", fallback_to_default=False)
     return config["SETTINGS"]
 
 
@@ -30,38 +20,119 @@ def get_settings_values():
         settings["LANGUAGE"],
         settings["MODEL"],
         settings["LLM_MODEL"],
-        settings["LLM_GEN"],
-        float(settings["LLM_GEN_THRESHOLD"]),
-        int(settings["WEBCAM_IMAGE_SIZE"]),
-        settings["DEBUG"],
+        settings.getboolean("LLM_GEN"),
+        settings.getint("WEBCAM_IMAGE_SIZE"),
+        settings.getboolean("DEBUG"),
     )
 
 
-def apply_settings(language, model, llm_model, llm_gen, llm_threshold, webcam_image_size, debug):
-    config = ConfigParser()
-    config.optionxform = str
-    config["SETTINGS"] = {
+def _as_bool(value, key):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    raise ValueError(f"{key} must be True or False")
+
+
+def _as_int(value, key, minimum=None, maximum=None):
+    try:
+        parsed = int(value)
+        if float(value) != parsed:
+            raise ValueError
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{key} must be an integer") from exc
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{key} must be at least {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{key} must be at most {maximum}")
+    return parsed
+
+
+def validate_settings(
+    language,
+    model,
+    llm_model,
+    llm_gen,
+    webcam_image_size,
+    debug,
+):
+    if language not in {"en", "ja"}:
+        raise ValueError("LANGUAGE must be en or ja")
+    if model not in APP_MODEL_CHOICES:
+        raise ValueError(f"MODEL must be one of: {', '.join(APP_MODEL_CHOICES)}")
+    if llm_model not in LLM_MODEL_CHOICES:
+        raise ValueError(f"LLM_MODEL must be one of: {', '.join(LLM_MODEL_CHOICES)}")
+
+    values = {
         "LANGUAGE": language,
         "MODEL": model,
         "LLM_MODEL": llm_model,
-        "LLM_GEN": llm_gen,
-        "LLM_GEN_THRESHOLD": str(llm_threshold),
-        "WEBCAM_IMAGE_SIZE": str(int(webcam_image_size)),
-        "DEBUG": debug,
+        "LLM_GEN": _as_bool(llm_gen, "LLM_GEN"),
+        "WEBCAM_IMAGE_SIZE": _as_int(webcam_image_size, "WEBCAM_IMAGE_SIZE", 1, 8192),
+        "DEBUG": _as_bool(debug, "DEBUG"),
     }
+    return values
+
+
+def apply_settings(
+    language,
+    model,
+    llm_model,
+    llm_gen,
+    webcam_image_size,
+    debug,
+):
+    values = validate_settings(
+        language,
+        model,
+        llm_model,
+        llm_gen,
+        webcam_image_size,
+        debug,
+    )
+
+    # Only normal UI settings are updated. Hidden LLM tuning values are kept.
+    config = read_config()
+    config["SETTINGS"].update(
+        {
+            key: str(value) for key, value in values.items()
+        }
+    )
     write_config(config)
 
-    return (*get_settings_values(), (
-        f"Settings saved to {config_path()}.\n"
-        "CYTOLONE Main and Model Download will use the updated settings immediately.\n"
-        "If scale-check camera sizing looks stale, reload the app before using scale-check."
-    ))
+    return (
+        *get_settings_values(),
+        (
+            f"Settings saved to {config_path()}.\n"
+            "CYTOLONE Main and Model Management will use the updated settings immediately.\n"
+            "The selected LLM can be downloaded even while LLM_GEN is disabled."
+        ),
+    )
+
+
+def _model_choices_markdown():
+    lines = [
+        "**LLM model selection** — choose manually. Memory figures are preliminary and require user validation.",
+        "",
+        "| Model | Tier | Download | Unified memory |",
+        "|---|---|---:|---:|",
+    ]
+    from CYTOLONE.model import get_llm_spec
+
+    for _, key in LLM_MODEL_DISPLAY_CHOICES:
+        spec = get_llm_spec(key)
+        lines.append(
+            f"| {spec.display_name} (`{key}`) | {spec.tier} | "
+            f"{spec.download_size} | {spec.memory_recommendation} |"
+        )
+    return "\n".join(lines)
 
 
 def build_settings_page():
     values = get_settings_values()
 
     gr.Markdown("# Settings")
+    gr.Markdown(_model_choices_markdown())
 
     language = gr.Dropdown(
         choices=["en", "ja"],
@@ -74,28 +145,24 @@ def build_settings_page():
         label="MODEL",
     )
     llm_model = gr.Dropdown(
-        choices=LLM_MODEL_CHOICES,
+        choices=LLM_MODEL_DISPLAY_CHOICES,
         value=values[2],
         label="LLM_MODEL",
     )
-    llm_gen = gr.Dropdown(
-        choices=["True", "False"],
+    llm_gen = gr.Checkbox(
         value=values[3],
         label="LLM_GEN",
-    )
-    llm_threshold = gr.Number(
-        value=values[4],
-        label="LLM_GEN_THRESHOLD",
-        precision=2,
+        info="Enable optional local findings generation; disabled by default.",
     )
     webcam_image_size = gr.Number(
-        value=values[5],
+        value=values[4],
         label="WEBCAM_IMAGE_SIZE",
+        minimum=1,
+        maximum=8192,
         precision=0,
     )
-    debug = gr.Dropdown(
-        choices=["True", "False"],
-        value=values[6],
+    debug = gr.Checkbox(
+        value=values[5],
         label="DEBUG",
     )
 
@@ -107,7 +174,6 @@ def build_settings_page():
         model,
         llm_model,
         llm_gen,
-        llm_threshold,
         webcam_image_size,
         debug,
     ]
