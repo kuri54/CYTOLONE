@@ -1,6 +1,7 @@
 import gc
 import importlib
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,9 @@ class LLMRuntimeError(RuntimeError):
 
 class MissingLLMModelError(LLMRuntimeError):
     pass
+
+
+_MLX_VLM_GENERATION_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -112,6 +116,24 @@ def _legacy_sampler(settings):
         )
     except (ImportError, AttributeError):
         return None
+
+
+def _set_mlx_vlm_thread_local_stream():
+    """Work around mlx-vlm 0.4.4's thread-bound generation stream."""
+
+    try:
+        generation_module = importlib.import_module("mlx_vlm.generate")
+        mlx_core = importlib.import_module("mlx.core")
+        new_thread_local_stream = getattr(mlx_core, "new_thread_local_stream", None)
+        if new_thread_local_stream is None:
+            return
+        stream = new_thread_local_stream(
+            mlx_core.default_device()
+        )
+        generation_module.generation_stream = stream
+        return stream
+    except (ImportError, AttributeError):
+        return
 
 
 def _load_text_only_vlm(model_path):
@@ -229,12 +251,14 @@ class LocalLLMRuntime:
                     "top_k": settings.top_k,
                 }
             )
-            result = self._generate(
-                self._model,
-                self._processor,
-                prompt,
-                **generation_kwargs,
-            )
+            with _MLX_VLM_GENERATION_LOCK:
+                _set_mlx_vlm_thread_local_stream()
+                result = self._generate(
+                    self._model,
+                    self._processor,
+                    prompt,
+                    **generation_kwargs,
+                )
         else:
             sampler = _legacy_sampler(settings)
             if sampler is not None:

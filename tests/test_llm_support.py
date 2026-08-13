@@ -1,6 +1,7 @@
 import json
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -45,6 +46,7 @@ from CYTOLONE.llm_runtime import (
     LLMRuntimeError,
     LocalLLMRuntime,
     MissingLLMModelError,
+    _set_mlx_vlm_thread_local_stream,
 )
 from CYTOLONE.model import (
     LLM_MODEL_REGISTRY,
@@ -153,6 +155,37 @@ class PromptV2Tests(unittest.TestCase):
             self.assertNotIn(japanese_name, prompt.user)
         self.assertIn("出力言語は日本語に限定", prompt.system)
         self.assertNotIn("_", prompt.user)
+
+    def test_prompt_budget_and_safety_contract_is_symmetric(self):
+        english = build_prompt_v2(
+            "cervix", "en", "Mild_dysplasia", "Atrophy"
+        ).system
+        japanese = build_prompt_v2(
+            "cervix", "ja", "Mild_dysplasia", "Atrophy"
+        ).system
+
+        self.assertIn("Make Section 1 the most detailed", english)
+        self.assertIn("4–6 bullet points, each 1–2 sentences", english)
+        self.assertIn("typical general pattern", english)
+        self.assertIn("directly compare them", english)
+        self.assertIn("N/C ratio", english)
+        self.assertIn("at most 2 bullet points in each", english)
+        self.assertIn("Do not pad", english)
+        self.assertIn("actual cytology, clinical findings, and standard management guidance", english)
+        self.assertIn("do not automatically recommend invasive tests, procedures, or treatment", english)
+        self.assertNotIn("serum hormone measurement", english)
+
+        self.assertIn("第1セクションを最も詳しく", japanese)
+        self.assertIn("4〜6個の箇条書き", japanese)
+        self.assertIn("1〜2文", japanese)
+        self.assertIn("一般的な典型像", japanese)
+        self.assertIn("直接比較", japanese)
+        self.assertIn("N/C比", japanese)
+        self.assertIn("第2セクションと第3セクションはそれぞれ最大2個", japanese)
+        self.assertIn("上限を埋めるために", japanese)
+        self.assertIn("実際の細胞診・臨床所見と標準的な管理指針", japanese)
+        self.assertIn("侵襲的検査、処置、治療を自動的に勧めない", japanese)
+        self.assertNotIn("血清ホルモン測定", japanese)
 
     def test_unknown_diagnosis_label_is_actionable(self):
         with self.assertRaisesRegex(ValueError, "Unknown diagnosis label"):
@@ -353,6 +386,49 @@ class RuntimeAdapterTests(unittest.TestCase):
         self.assertIn("Model Management", str(context.exception))
         self.assertIn("application model", str(context.exception))
 
+    def test_mlx_vlm_global_stream_is_replaced_for_each_worker(self):
+        old_stream = object()
+
+        class ThreadLocalStreamSentinel:
+            pass
+
+        thread_local_streams = [
+            ThreadLocalStreamSentinel(),
+            ThreadLocalStreamSentinel(),
+        ]
+        generation_module = types.SimpleNamespace(generation_stream=old_stream)
+        mlx_core = types.SimpleNamespace(
+            ThreadLocalStream=ThreadLocalStreamSentinel,
+            default_device=Mock(return_value="gpu device"),
+            new_thread_local_stream=Mock(side_effect=thread_local_streams),
+        )
+
+        def import_module(name):
+            return {
+                "mlx_vlm.generate": generation_module,
+                "mlx.core": mlx_core,
+            }[name]
+
+        results = []
+
+        def run_in_worker():
+            results.append(_set_mlx_vlm_thread_local_stream())
+
+        with patch(
+            "CYTOLONE.llm_runtime.importlib.import_module",
+            side_effect=import_module,
+        ):
+            for _ in range(2):
+                worker = threading.Thread(target=run_in_worker)
+                worker.start()
+                worker.join()
+
+        self.assertEqual(results, thread_local_streams)
+        self.assertIs(generation_module.generation_stream, thread_local_streams[-1])
+        self.assertEqual(mlx_core.new_thread_local_stream.call_count, 2)
+        for stream_call in mlx_core.new_thread_local_stream.call_args_list:
+            self.assertEqual(stream_call.args, ("gpu device",))
+
     def test_qwen_runtime_is_text_only_and_disables_thinking(self):
         with tempfile.TemporaryDirectory() as temporary:
             model_path = Path(temporary) / "qwen"
@@ -481,17 +557,87 @@ class RuntimeAdapterTests(unittest.TestCase):
             ), patch(
                 "transformers.AutoTokenizer.from_pretrained",
                 return_value=qwen_tokenizer,
-            ):
+            ), patch(
+                "CYTOLONE.llm_runtime._set_mlx_vlm_thread_local_stream"
+            ) as set_stream:
                 runtime = LocalLLMRuntime()
                 runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
                 self.assertEqual(runtime.active_model_key, "qwen3.5-9b-4bit")
+                runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
                 runtime.generate("gpt-oss-120b", legacy_path, [])
 
             self.assertEqual(runtime.active_model_key, "gpt-oss-120b")
             qwen_module.load.assert_not_called()
             qwen_utils.load_model.assert_called_once_with(qwen_path, lazy=True)
+            self.assertEqual(qwen_module.generate.call_count, 2)
             self.assertEqual(legacy_module.load.call_count, 1)
             self.assertEqual(legacy_module.generate.call_count, 1)
+            self.assertEqual(set_stream.call_count, 2)
+
+    def test_qwen_generation_is_serialized_across_workers(self):
+        active_calls = 0
+        max_active_calls = 0
+        call_count = 0
+        state_lock = threading.Lock()
+        first_call_entered = threading.Event()
+        release_first_call = threading.Event()
+        second_call_started = threading.Event()
+        second_call_finished = threading.Event()
+        outputs = []
+
+        def generate_text(*args, **kwargs):
+            nonlocal active_calls, max_active_calls, call_count
+            with state_lock:
+                call_count += 1
+                current_call = call_count
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            try:
+                if current_call == 1:
+                    first_call_entered.set()
+                    release_first_call.wait()
+                return "qwen answer"
+            finally:
+                with state_lock:
+                    active_calls -= 1
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "CYTOLONE.llm_runtime.model_directory_is_complete",
+            return_value=True,
+        ), patch(
+            "CYTOLONE.llm_runtime._set_mlx_vlm_thread_local_stream"
+        ) as set_stream:
+            runtime = LocalLLMRuntime()
+            runtime._active_model_key = "qwen3.5-9b-4bit"
+            runtime._model = object()
+            runtime._processor = Mock()
+            runtime._generate = generate_text
+            model_path = Path(temporary) / "qwen"
+
+            def run_first_worker():
+                outputs.append(runtime.generate("qwen3.5-9b-4bit", model_path, []))
+
+            def run_second_worker():
+                second_call_started.set()
+                outputs.append(runtime.generate("qwen3.5-9b-4bit", model_path, []))
+                second_call_finished.set()
+
+            first_worker = threading.Thread(target=run_first_worker)
+            second_worker = threading.Thread(target=run_second_worker)
+            first_worker.start()
+            try:
+                self.assertTrue(first_call_entered.wait(timeout=1))
+                second_worker.start()
+                self.assertTrue(second_call_started.wait(timeout=1))
+                self.assertFalse(second_call_finished.wait(timeout=0.1))
+            finally:
+                release_first_call.set()
+                first_worker.join(timeout=1)
+                second_worker.join(timeout=1)
+
+        self.assertEqual(outputs, ["qwen answer", "qwen answer"])
+        self.assertEqual(max_active_calls, 1)
+        self.assertEqual(set_stream.call_count, 2)
 
     def test_qwen_load_error_includes_underlying_one_line_detail(self):
         with tempfile.TemporaryDirectory() as temporary:
