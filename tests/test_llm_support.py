@@ -156,7 +156,7 @@ class PromptV2Tests(unittest.TestCase):
         self.assertIn("出力言語は日本語に限定", prompt.system)
         self.assertNotIn("_", prompt.user)
 
-    def test_prompt_budget_and_safety_contract_is_symmetric(self):
+    def test_prompt_output_budget_and_safety_contract_is_symmetric(self):
         english = build_prompt_v2(
             "cervix", "en", "Mild_dysplasia", "Atrophy"
         ).system
@@ -164,25 +164,28 @@ class PromptV2Tests(unittest.TestCase):
             "cervix", "ja", "Mild_dysplasia", "Atrophy"
         ).system
 
-        self.assertIn("Make Section 1 the most detailed", english)
-        self.assertIn("4–6 bullet points, each 1–2 sentences", english)
-        self.assertIn("typical general pattern", english)
-        self.assertIn("directly compare them", english)
+        self.assertIn("no more than 6 bullet points total", english)
+        self.assertIn("do not repeat a conclusion or add a summary", english)
+        self.assertIn("write exactly 4 bullets, one sentence each", english)
+        self.assertIn("directly compare both candidates in the same sentence", english)
+        self.assertIn("rather than listing candidates separately", english)
+        self.assertIn("typical general patterns", english)
         self.assertIn("N/C ratio", english)
-        self.assertIn("at most 2 bullet points in each", english)
-        self.assertIn("Do not pad", english)
+        self.assertIn("Keep Section 2 to at most 1 short, one-sentence bullet", english)
+        self.assertIn("Keep Section 3 to at most 1 short, one-sentence bullet", english)
         self.assertIn("actual cytology, clinical findings, and standard management guidance", english)
         self.assertIn("do not automatically recommend invasive tests, procedures, or treatment", english)
         self.assertNotIn("serum hormone measurement", english)
 
+        self.assertIn("箇条書きは全体で最大6個", japanese)
+        self.assertIn("結論の反復や追加の要約は書かない", japanese)
         self.assertIn("第1セクションを最も詳しく", japanese)
-        self.assertIn("4〜6個の箇条書き", japanese)
-        self.assertIn("1〜2文", japanese)
-        self.assertIn("一般的な典型像", japanese)
-        self.assertIn("直接比較", japanese)
+        self.assertIn("箇条書きはちょうど4個、各1文", japanese)
+        self.assertIn("2候補を同じ文で直接比較", japanese)
+        self.assertIn("候補ごとに別々に列挙せず", japanese)
         self.assertIn("N/C比", japanese)
-        self.assertIn("第2セクションと第3セクションはそれぞれ最大2個", japanese)
-        self.assertIn("上限を埋めるために", japanese)
+        self.assertIn("第2セクションは最大1個の短い箇条書き（1文）", japanese)
+        self.assertIn("第3セクションも最大1個の短い箇条書き（1文）", japanese)
         self.assertIn("実際の細胞診・臨床所見と標準的な管理指針", japanese)
         self.assertIn("侵襲的検査、処置、治療を自動的に勧めない", japanese)
         self.assertNotIn("血清ホルモン測定", japanese)
