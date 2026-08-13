@@ -4,6 +4,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from transformers import AutoTokenizer
+
 from CYTOLONE.model import LLM_GENERATION_DEFAULTS, get_llm_spec
 from CYTOLONE.model_storage import model_directory_is_complete
 
@@ -118,7 +120,11 @@ def _load_text_only_vlm(model_path):
     tokenizer_utils = importlib.import_module("mlx_vlm.tokenizer_utils")
     model_path = Path(model_path)
     model = utils.load_model(model_path, lazy=True)
-    tokenizer = tokenizer_utils.load_tokenizer(model_path)
+    detokenizer_class = tokenizer_utils.load_tokenizer(
+        model_path, return_tokenizer=False
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
+    tokenizer.detokenizer = detokenizer_class(tokenizer)
     tokenizer.stopping_criteria = utils.StoppingCriteria(
         getattr(model.config, "eos_token_id", None), tokenizer
     )

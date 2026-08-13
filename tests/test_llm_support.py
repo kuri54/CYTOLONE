@@ -357,8 +357,27 @@ class RuntimeAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             model_path = Path(temporary) / "qwen"
             make_model_directory(model_path)
-            tokenizer = Mock(spec=["apply_chat_template"])
-            tokenizer.apply_chat_template.return_value = "formatted prompt"
+
+            class NonCallableTokenizerWrapper:
+                def __init__(self, tokenizer):
+                    self._tokenizer = tokenizer
+
+                def __getattr__(self, name):
+                    return getattr(self._tokenizer, name)
+
+            class CallableTokenizer:
+                def __init__(self):
+                    self.apply_chat_template = Mock(
+                        return_value="formatted prompt"
+                    )
+
+                def __call__(self, *args, **kwargs):
+                    return {"input_ids": [[0]]}
+
+            tokenizer = CallableTokenizer()
+            wrapper = NonCallableTokenizerWrapper(tokenizer)
+            detokenizer = object()
+            detokenizer_class = Mock(return_value=detokenizer)
             model = types.SimpleNamespace(
                 config=types.SimpleNamespace(eos_token_id=151645)
             )
@@ -372,9 +391,16 @@ class RuntimeAdapterTests(unittest.TestCase):
                 StoppingCriteria=Mock(return_value="stopping criteria"),
             )
             tokenizer_utils = types.SimpleNamespace(
-                load_tokenizer=Mock(return_value=tokenizer)
+                load_tokenizer=Mock(
+                    side_effect=lambda path, return_tokenizer=True: (
+                        wrapper if return_tokenizer else detokenizer_class
+                    )
+                )
             )
-            with patch.dict(
+            with patch(
+                "transformers.AutoTokenizer.from_pretrained",
+                return_value=tokenizer,
+            ) as from_pretrained, patch.dict(
                 sys.modules,
                 {
                     "mlx_vlm": qwen_module,
@@ -395,7 +421,17 @@ class RuntimeAdapterTests(unittest.TestCase):
             self.assertEqual(output, "mock answer")
             qwen_module.load.assert_not_called()
             qwen_utils.load_model.assert_called_once_with(model_path, lazy=True)
-            tokenizer_utils.load_tokenizer.assert_called_once_with(model_path)
+            tokenizer_utils.load_tokenizer.assert_called_once_with(
+                model_path, return_tokenizer=False
+            )
+            from_pretrained.assert_called_once_with(
+                model_path, local_files_only=True
+            )
+            detokenizer_class.assert_called_once_with(tokenizer)
+            self.assertFalse(callable(wrapper))
+            self.assertTrue(callable(tokenizer))
+            self.assertIs(runtime._processor, tokenizer)
+            self.assertIs(tokenizer.detokenizer, detokenizer)
             qwen_utils.StoppingCriteria.assert_called_once_with(151645, tokenizer)
             self.assertEqual(tokenizer.stopping_criteria, "stopping criteria")
             call = qwen_module.generate.call_args
@@ -442,6 +478,9 @@ class RuntimeAdapterTests(unittest.TestCase):
                     "mlx_vlm.tokenizer_utils": tokenizer_utils,
                     "mlx_lm": legacy_module,
                 },
+            ), patch(
+                "transformers.AutoTokenizer.from_pretrained",
+                return_value=qwen_tokenizer,
             ):
                 runtime = LocalLLMRuntime()
                 runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
