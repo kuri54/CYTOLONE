@@ -20,7 +20,6 @@ def get_settings_values():
         settings["LANGUAGE"],
         settings["MODEL"],
         settings["LLM_MODEL"],
-        settings.getboolean("LLM_GEN"),
         settings.getint("WEBCAM_IMAGE_SIZE"),
         settings.getboolean("DEBUG"),
     )
@@ -52,7 +51,6 @@ def validate_settings(
     language,
     model,
     llm_model,
-    llm_gen,
     webcam_image_size,
     debug,
 ):
@@ -67,7 +65,6 @@ def validate_settings(
         "LANGUAGE": language,
         "MODEL": model,
         "LLM_MODEL": llm_model,
-        "LLM_GEN": _as_bool(llm_gen, "LLM_GEN"),
         "WEBCAM_IMAGE_SIZE": _as_int(webcam_image_size, "WEBCAM_IMAGE_SIZE", 1, 8192),
         "DEBUG": _as_bool(debug, "DEBUG"),
     }
@@ -78,7 +75,6 @@ def apply_settings(
     language,
     model,
     llm_model,
-    llm_gen,
     webcam_image_size,
     debug,
 ):
@@ -86,7 +82,6 @@ def apply_settings(
         language,
         model,
         llm_model,
-        llm_gen,
         webcam_image_size,
         debug,
     )
@@ -105,7 +100,7 @@ def apply_settings(
         (
             f"Settings saved to {config_path()}.\n"
             "CYTOLONE Main and Model Management will use the updated settings immediately.\n"
-            "The selected LLM can be downloaded even while LLM_GEN is disabled."
+            "The selected LLM can be downloaded independently of manual generation."
         ),
     )
 
@@ -149,20 +144,15 @@ def build_settings_page():
         value=values[2],
         label="LLM_MODEL",
     )
-    llm_gen = gr.Checkbox(
-        value=values[3],
-        label="LLM_GEN",
-        info="Enable optional local findings generation; disabled by default.",
-    )
     webcam_image_size = gr.Number(
-        value=values[4],
+        value=values[3],
         label="WEBCAM_IMAGE_SIZE",
         minimum=1,
         maximum=8192,
         precision=0,
     )
     debug = gr.Checkbox(
-        value=values[5],
+        value=values[4],
         label="DEBUG",
     )
 
@@ -173,7 +163,6 @@ def build_settings_page():
         language,
         model,
         llm_model,
-        llm_gen,
         webcam_image_size,
         debug,
     ]

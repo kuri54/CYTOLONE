@@ -340,7 +340,6 @@ def download_models_with_status(force=False):
 
     yield _download_status(
         "Checking selected application and LLM models...\n"
-        f"LLM generation enabled: {config['LLM_GEN']}\n"
         "Targets:\n" + "\n".join(f"- {target}" for target in targets),
         config,
         output_root,

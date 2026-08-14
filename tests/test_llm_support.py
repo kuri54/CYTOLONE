@@ -15,9 +15,14 @@ from CYTOLONE.app import (
     build_settings_page,
     delete_model_from_ui,
     download_model_from_ui,
+    generate_comments,
     get_labels_for_order,
     load_application_model,
+    MANUAL_GENERATION_BUTTON_LABELS,
+    MANUAL_GENERATION_GUIDANCE,
+    reset_analysis_outputs,
     run as run_app,
+    show_manual_generation_with_current_config,
 )
 from CYTOLONE.default_config.config_manager import main as config_main
 from CYTOLONE.default_config.config_manager import read_config, write_config
@@ -295,7 +300,6 @@ class SettingsCompatibilityTests(unittest.TestCase):
                         "en",
                         "v1.1",
                         "qwen3.5-9b-4bit",
-                        False,
                         0,
                         False,
                     )
@@ -306,7 +310,6 @@ class SettingsCompatibilityTests(unittest.TestCase):
             "en",
             "v1.1",
             "qwen3.5-9b-4bit",
-            False,
             1024,
             False,
         )
@@ -323,14 +326,16 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 config["SETTINGS"]["LLM_TOP_P"] = "0.65"
                 config["SETTINGS"]["LLM_TOP_K"] = "12"
                 config["SETTINGS"]["LLM_SEED"] = "9"
+                config["SETTINGS"]["LLM_GEN"] = "True"
                 write_config(config)
 
                 result = apply_settings(
-                    "ja", "v1.0", "qwen3.5-9b-8bit", True, 900, True
+                    "ja", "v1.0", "qwen3.5-9b-8bit", 900, True
                 )
                 after = read_config()["SETTINGS"]
 
-            self.assertEqual(len(result), 7)
+            self.assertEqual(len(result), 6)
+            self.assertEqual(after["LLM_GEN"], "True")
             self.assertEqual(after["LLM_GEN_THRESHOLD"], "0.45")
             self.assertEqual(after["LLM_MAX_TOKENS"], "321")
             self.assertEqual(after["LLM_TEMPERATURE"], "0.25")
@@ -358,8 +363,9 @@ class SettingsCompatibilityTests(unittest.TestCase):
                     "DEBUG": False,
                 }
             )
-            self.assertEqual(len(values), 6)
-            self.assertEqual(len(frame), 5)
+            self.assertEqual(len(values), 5)
+            self.assertEqual(len(frame), 4)
+            self.assertNotIn("Generate", set(frame["Item"]))
             self.assertNotIn("Threshold", set(frame["Item"]))
             self.assertNotIn("Temperature", set(frame["Item"]))
 
@@ -377,6 +383,183 @@ class SettingsCompatibilityTests(unittest.TestCase):
 
                 self.assertEqual(context.exception.code, 2)
                 self.assertEqual(config_path.read_text(encoding="utf-8"), before)
+
+
+class ManualGenerationUXTests(unittest.TestCase):
+    QUESTION = "What is the diagnosis for this image?"
+    QUESTION_MAP = {QUESTION: "Diagnosis"}
+    ORDER = ["Full", "Anomaly", "Malignancy", "System", "Diagnosis"]
+
+    def _config(self, language="en", llm_gen=False):
+        return {
+            "LANGUAGE": language,
+            "MODEL": "v1.1",
+            "LLM_MODEL": "qwen3.5-9b-4bit",
+            "LLM_GEN": llm_gen,
+            "LLM_GEN_THRESHOLD": 0.8,
+            "LLM_MAX_TOKENS": 512,
+            "LLM_TEMPERATURE": 0.7,
+            "LLM_TOP_P": 0.8,
+            "LLM_TOP_K": 20,
+            "LLM_SEED": 42,
+            "WEBCAM_IMAGE_SIZE": 1024,
+            "DEBUG": False,
+        }
+
+    def test_reset_clears_results_and_prepares_language_specific_button(self):
+        for language in ("ja", "en"):
+            label, guidance, button, comment, capture = reset_analysis_outputs(language)
+            self.assertIsNone(label["value"])
+            self.assertEqual(guidance["value"], "")
+            self.assertFalse(guidance["visible"])
+            self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS[language])
+            self.assertFalse(button["visible"])
+            self.assertFalse(button["interactive"])
+            self.assertEqual(comment["value"], "")
+            self.assertEqual(capture["value"], "")
+
+    def test_manual_offer_uses_diagnosis_threshold_only_even_when_llm_gen_is_false(self):
+        config = self._config(language="ja", llm_gen=False)
+        question = "この画像の診断は?"
+        labels = {"Atrophy": 0.45, "Mild_dysplasia": 0.40}
+        with patch(
+            "CYTOLONE.app.get_main_context",
+            return_value=(config, {question: "Diagnosis"}, [], self.ORDER),
+        ):
+            guidance, button = show_manual_generation_with_current_config(
+                question, labels, "cervix"
+            )
+
+        self.assertTrue(guidance["visible"])
+        self.assertEqual(guidance["value"], MANUAL_GENERATION_GUIDANCE["ja"])
+        self.assertTrue(button["visible"])
+        self.assertTrue(button["interactive"])
+        self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS["ja"])
+
+    def test_manual_offer_is_hidden_for_non_diagnosis_or_non_close_results(self):
+        config = self._config()
+        with patch(
+            "CYTOLONE.app.get_main_context",
+            return_value=(config, self.QUESTION_MAP, [], self.ORDER),
+        ):
+            guidance, button = show_manual_generation_with_current_config(
+                self.QUESTION, {"Atrophy": 0.8, "Mild_dysplasia": 0.1}, "cervix"
+            )
+        self.assertFalse(guidance["visible"])
+        self.assertFalse(button["visible"])
+
+        full_question = "What do you think of this image?"
+        with patch(
+            "CYTOLONE.app.get_main_context",
+            return_value=(
+                config,
+                {full_question: "Full"},
+                [],
+                self.ORDER,
+            ),
+        ):
+            guidance, button = show_manual_generation_with_current_config(
+                full_question, {"Atrophy": 0.45, "Mild_dysplasia": 0.40}, "cervix"
+            )
+        self.assertFalse(guidance["visible"])
+        self.assertFalse(button["visible"])
+
+    def test_manual_generation_uses_labels_without_llm_gen_gate(self):
+        config = self._config(llm_gen=False)
+        labels = {"Atrophy": 0.45, "Mild_dysplasia": 0.40}
+        with patch(
+            "CYTOLONE.app.llm_runtime.generate", return_value="generated findings"
+        ) as generate_mock:
+            output = generate_comments(self.QUESTION, labels, "cervix", config)
+
+        self.assertEqual(output, "generated findings")
+        messages = generate_mock.call_args.kwargs["messages"]
+        self.assertIn("Atrophy", messages[1]["content"])
+        self.assertIn("Mild dysplasia", messages[1]["content"])
+        self.assertNotIn("image", messages[1]["content"].lower())
+
+    def test_build_app_wires_reset_classify_condition_and_manual_click(self):
+        app = build_app()
+        components = app.config["components"]
+
+        def component_id(predicate):
+            return next(item for item in components if predicate(item))["id"]
+
+        question_id = component_id(
+            lambda item: item["props"].get("label") == "Question Type"
+        )
+        image_id = component_id(
+            lambda item: item["props"].get("elem_id") == "cytolone-image-input"
+        )
+        capture_id = component_id(
+            lambda item: item["type"] == "textbox"
+            and item["props"].get("visible") is False
+        )
+        label_id = component_id(
+            lambda item: item["props"].get("label") == "Result"
+        )
+        guidance_id = component_id(
+            lambda item: item["type"] == "markdown"
+            and item["props"].get("visible") is False
+            and item["props"].get("value") == ""
+        )
+        button_id = component_id(
+            lambda item: item["type"] == "button"
+            and item["props"].get("value") == MANUAL_GENERATION_BUTTON_LABELS["en"]
+        )
+        comment_id = component_id(
+            lambda item: item["props"].get("elem_classes") == ["comment-box"]
+        )
+        language_id = component_id(
+            lambda item: item["props"].get("label") == "LANGUAGE"
+        )
+
+        dependencies = app.config["dependencies"]
+        reset_outputs = {label_id, guidance_id, button_id, comment_id, capture_id}
+        reset_events = [
+            dependency
+            for dependency in dependencies
+            if set(dependency["outputs"]) == reset_outputs
+        ]
+        self.assertEqual(len(reset_events), 4)
+
+        classify_events = [
+            dependency
+            for dependency in dependencies
+            if dependency["inputs"] == [question_id, image_id, capture_id]
+            and dependency["outputs"] == [label_id]
+        ]
+        self.assertEqual(len(classify_events), 1)
+        self.assertIn("canvas", classify_events[0]["js"])
+
+        condition_events = [
+            dependency
+            for dependency in dependencies
+            if dependency["inputs"] == [question_id, label_id]
+            and dependency["outputs"] == [guidance_id, button_id]
+        ]
+        self.assertEqual(len(condition_events), 1)
+
+        manual_events = [
+            dependency
+            for dependency in dependencies
+            if dependency["targets"] == [(button_id, "click")]
+            and dependency["inputs"] == [question_id, label_id]
+            and dependency["outputs"] == [comment_id]
+        ]
+        self.assertEqual(len(manual_events), 1)
+        self.assertFalse(manual_events[0].get("js"))
+        self.assertEqual(
+            len(
+                [
+                    dependency
+                    for dependency in reset_events
+                    if dependency["targets"] == [(language_id, "change")]
+                    and dependency["inputs"] == [language_id]
+                ]
+            ),
+            1,
+        )
 
 
 class RuntimeAdapterTests(unittest.TestCase):
@@ -1061,8 +1244,9 @@ class ModelManagementWiringTests(unittest.TestCase):
 
         with gr.Blocks():
             settings_components, _, _ = build_settings_page()
-        self.assertEqual(len(settings_components), 6)
+        self.assertEqual(len(settings_components), 5)
         labels = {component.label for component in settings_components}
+        self.assertNotIn("LLM_GEN", labels)
         for hidden_key in (
             "LLM_GEN_THRESHOLD",
             "LLM_MAX_TOKENS",

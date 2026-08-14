@@ -43,6 +43,15 @@ processor_cache = {}
 llm_runtime = LocalLLMRuntime()
 TARGET_SIZE = 1024
 
+MANUAL_GENERATION_BUTTON_LABELS = {
+    "ja": "詳細な鑑別所見を生成",
+    "en": "Generate detailed differential findings",
+}
+MANUAL_GENERATION_GUIDANCE = {
+    "ja": "判定が拮抗しています。生成は任意で、時間がかかる場合があります。",
+    "en": "The top two diagnoses are close. Generation is optional and may take some time.",
+}
+
 
 def _cytolone_blocks():
     """Create a themed Blocks app across supported Gradio constructor APIs."""
@@ -499,13 +508,54 @@ def delete_model_from_ui(role, key, confirmation, other_key):
 def reset_delete_confirmation():
     return gr.update(value=False)
 
-def generate_comments(choice_caption, label_probs, specimen, config):
-    order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
-    top_labels = sorted(label_probs.items(), key=lambda x: x[1], reverse=True)[:2]
-    threshold = config["LLM_GEN_THRESHOLD"]
 
-    if not (len(top_labels) > 1 and top_labels[0][1] < threshold and order_type == "Diagnosis"):
-        return " "
+def _top_two_label_probs(label_probs):
+    if not isinstance(label_probs, dict):
+        return []
+    return sorted(label_probs.items(), key=lambda item: item[1], reverse=True)[:2]
+
+
+def _manual_generation_available(choice_caption, label_probs, specimen, config):
+    try:
+        order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
+    except (KeyError, TypeError):
+        return False
+
+    top_labels = _top_two_label_probs(label_probs)
+    threshold = config["LLM_GEN_THRESHOLD"]
+    return (
+        len(top_labels) > 1
+        and top_labels[0][1] < threshold
+        and order_type == "Diagnosis"
+    )
+
+
+def _manual_generation_button_update(language, visible=False):
+    return gr.update(
+        value=MANUAL_GENERATION_BUTTON_LABELS[language],
+        visible=visible,
+        interactive=visible,
+    )
+
+
+def reset_analysis_outputs(language=None):
+    if language not in MANUAL_GENERATION_BUTTON_LABELS:
+        language = load_config()["LANGUAGE"]
+
+    return (
+        gr.update(value=None),
+        gr.update(value="", visible=False),
+        _manual_generation_button_update(language),
+        gr.update(value=""),
+        gr.update(value=""),
+    )
+
+
+def generate_comments(choice_caption, label_probs, specimen, config):
+    if not _manual_generation_available(choice_caption, label_probs, specimen, config):
+        return ""
+
+    top_labels = _top_two_label_probs(label_probs)
 
     llm_model_path = get_llm_id(config["LLM_MODEL"])
     prompt = build_prompt_v2(
@@ -546,7 +596,7 @@ def refresh_main_page(specimen="cervix"):
                 mirror=False,
             ),
         ),
-        "",
+        *reset_analysis_outputs(config["LANGUAGE"]),
     )
 
 def select_image_for_analysis(image, captured_image, config):
@@ -573,12 +623,28 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
 
 def generate_comments_with_current_config(choice_caption, label_probs, specimen):
     config, question, _, _ = get_main_context(specimen)
-    if not config["LLM_GEN"]:
-        return ""
     if choice_caption not in question:
         choice_caption = next(iter(question))
 
     return generate_comments(choice_caption, label_probs, specimen=specimen, config=config)
+
+
+def show_manual_generation_with_current_config(choice_caption, label_probs, specimen):
+    config, question, _, _ = get_main_context(specimen)
+    if choice_caption not in question:
+        choice_caption = next(iter(question))
+
+    if not _manual_generation_available(choice_caption, label_probs, specimen, config):
+        return (
+            gr.update(value="", visible=False),
+            _manual_generation_button_update(config["LANGUAGE"]),
+        )
+
+    language = config["LANGUAGE"]
+    return (
+        gr.update(value=MANUAL_GENERATION_GUIDANCE[language], visible=True),
+        _manual_generation_button_update(language, visible=True),
+    )
 
 def build_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
@@ -635,12 +701,30 @@ def build_main_page(specimen="cervix"):
             label_output = gr.Label(label="Result", show_label=True)
 
         with gr.Column(min_width=400):
+            generation_guidance = gr.Markdown(value="", visible=False)
+            generation_button = gr.Button(
+                MANUAL_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
+                visible=False,
+                interactive=False,
+            )
             comment_output = gr.Markdown(
                 label="Comments",
                 elem_classes="comment-box"
             )
 
-    classify_event = submit_btn.click(
+    reset_event = submit_btn.click(
+        fn=reset_analysis_outputs,
+        inputs=None,
+        outputs=[
+            label_output,
+            generation_guidance,
+            generation_button,
+            comment_output,
+            capture_payload,
+        ],
+    )
+
+    classify_event = reset_event.success(
         fn=partial(classify_with_current_config, specimen=specimen),
         inputs=[
             question_selector,
@@ -652,21 +736,49 @@ def build_main_page(specimen="cervix"):
         )
 
     classify_event.success(
-        fn=partial(generate_comments_with_current_config, specimen=specimen),
+        fn=partial(show_manual_generation_with_current_config, specimen=specimen),
         inputs=[
             question_selector,
             label_output
             ],
-        outputs=comment_output
+        outputs=[generation_guidance, generation_button],
         )
 
-    return question_selector, config_table, image_input, capture_payload
+    generation_button.click(
+        fn=partial(generate_comments_with_current_config, specimen=specimen),
+        inputs=[question_selector, label_output],
+        outputs=comment_output,
+    )
+
+    for input_component in (question_selector, image_input):
+        input_component.change(
+            fn=reset_analysis_outputs,
+            inputs=None,
+            outputs=[
+                label_output,
+                generation_guidance,
+                generation_button,
+                comment_output,
+                capture_payload,
+            ],
+        )
+
+    return (
+        question_selector,
+        config_table,
+        image_input,
+        label_output,
+        generation_guidance,
+        generation_button,
+        comment_output,
+        capture_payload,
+    )
 
 def build_model_management_page():
     gr.Markdown("# Model Management")
     gr.Markdown(
         "Manage one application model or LLM at a time. Downloads and deletions "
-        "are user initiated; LLM_GEN does not control model preparation."
+        "are user initiated and independent of manual LLM generation."
     )
     summary = gr.Markdown(model_management_summary())
     status = gr.Textbox(label="Status", lines=10, interactive=False)
@@ -771,7 +883,6 @@ def apply_settings_and_refresh_main(
     language,
     model,
     llm_model,
-    llm_gen,
     webcam_image_size,
     debug,
 ):
@@ -779,7 +890,6 @@ def apply_settings_and_refresh_main(
         language,
         model,
         llm_model,
-        llm_gen,
         webcam_image_size,
         debug,
     )
@@ -857,6 +967,11 @@ def build_app():
             fn=show_settings,
             inputs=None,
             outputs=[pages, *settings_components],
+        )
+        settings_components[0].change(
+            fn=reset_analysis_outputs,
+            inputs=settings_components[0],
+            outputs=main_refresh_targets[3:]
         )
         settings_apply_btn.click(
             fn=apply_settings_and_refresh_main,

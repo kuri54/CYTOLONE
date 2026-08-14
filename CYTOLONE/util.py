@@ -25,7 +25,6 @@ def build_config_df(config):
         {"Section": "Language",     "Item": "Language",          "Value": f"{config['LANGUAGE']}"},
         {"Section": "Model",        "Item": "Model",             "Value": f"{config['MODEL']}"},
         {"Section": "",             "Item": "LLM Model",         "Value": f"{config['LLM_MODEL']}"},
-        {"Section": "LLM Generate", "Item": "Generate",          "Value": f"{config['LLM_GEN']}"},
         {"Section": "Device",       "Item": "Webcam Image Size", "Value": f"{config['WEBCAM_IMAGE_SIZE']}"},
     ]
     return pd.DataFrame(rows, columns=["Section", "Item", "Value"])
