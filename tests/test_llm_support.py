@@ -408,8 +408,9 @@ class ManualGenerationUXTests(unittest.TestCase):
 
     def test_reset_clears_results_and_prepares_language_specific_button(self):
         for language in ("ja", "en"):
-            label, guidance, button, comment, capture = reset_analysis_outputs(language)
+            label, label_probs, guidance, button, comment, capture = reset_analysis_outputs(language)
             self.assertIsNone(label["value"])
+            self.assertEqual(label_probs, {})
             self.assertEqual(guidance["value"], "")
             self.assertFalse(guidance["visible"])
             self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS[language])
@@ -498,6 +499,9 @@ class ManualGenerationUXTests(unittest.TestCase):
         label_id = component_id(
             lambda item: item["props"].get("label") == "Result"
         )
+        label_probs_state_id = component_id(
+            lambda item: item["type"] == "state"
+        )
         guidance_id = component_id(
             lambda item: item["type"] == "markdown"
             and item["props"].get("visible") is False
@@ -515,7 +519,14 @@ class ManualGenerationUXTests(unittest.TestCase):
         )
 
         dependencies = app.config["dependencies"]
-        reset_outputs = {label_id, guidance_id, button_id, comment_id, capture_id}
+        reset_outputs = {
+            label_id,
+            label_probs_state_id,
+            guidance_id,
+            button_id,
+            comment_id,
+            capture_id,
+        }
         reset_events = [
             dependency
             for dependency in dependencies
@@ -527,7 +538,7 @@ class ManualGenerationUXTests(unittest.TestCase):
             dependency
             for dependency in dependencies
             if dependency["inputs"] == [question_id, image_id, capture_id]
-            and dependency["outputs"] == [label_id]
+            and dependency["outputs"] == [label_id, label_probs_state_id]
         ]
         self.assertEqual(len(classify_events), 1)
         self.assertIn("canvas", classify_events[0]["js"])
@@ -535,7 +546,7 @@ class ManualGenerationUXTests(unittest.TestCase):
         condition_events = [
             dependency
             for dependency in dependencies
-            if dependency["inputs"] == [question_id, label_id]
+            if dependency["inputs"] == [question_id, label_probs_state_id]
             and dependency["outputs"] == [guidance_id, button_id]
         ]
         self.assertEqual(len(condition_events), 1)
@@ -544,7 +555,7 @@ class ManualGenerationUXTests(unittest.TestCase):
             dependency
             for dependency in dependencies
             if dependency["targets"] == [(button_id, "click")]
-            and dependency["inputs"] == [question_id, label_id]
+            and dependency["inputs"] == [question_id, label_probs_state_id]
             and dependency["outputs"] == [comment_id]
         ]
         self.assertEqual(len(manual_events), 1)

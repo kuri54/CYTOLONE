@@ -544,6 +544,7 @@ def reset_analysis_outputs(language=None):
 
     return (
         gr.update(value=None),
+        {},
         gr.update(value="", visible=False),
         _manual_generation_button_update(language),
         gr.update(value=""),
@@ -611,7 +612,7 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
 
     image, source = select_image_for_analysis(image, captured_image, config)
 
-    return classify_labels(
+    label_probs = classify_labels(
         choice_caption,
         image,
         specimen=specimen,
@@ -620,6 +621,7 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
         config=config,
         source=source,
     )
+    return label_probs, label_probs
 
 def generate_comments_with_current_config(choice_caption, label_probs, specimen):
     config, question, _, _ = get_main_context(specimen)
@@ -699,6 +701,7 @@ def build_main_page(specimen="cervix"):
     with gr.Row(equal_height=True, variant="panel"):
         with gr.Column(min_width=300):
             label_output = gr.Label(label="Result", show_label=True)
+            label_probs_state = gr.State(value={})
 
         with gr.Column(min_width=400):
             generation_guidance = gr.Markdown(value="", visible=False)
@@ -717,6 +720,7 @@ def build_main_page(specimen="cervix"):
         inputs=None,
         outputs=[
             label_output,
+            label_probs_state,
             generation_guidance,
             generation_button,
             comment_output,
@@ -731,7 +735,7 @@ def build_main_page(specimen="cervix"):
             image_input,
             capture_payload,
         ],
-        outputs=label_output,
+        outputs=[label_output, label_probs_state],
         js=CAPTURE_CURRENT_VIEW_JS,
         )
 
@@ -739,14 +743,14 @@ def build_main_page(specimen="cervix"):
         fn=partial(show_manual_generation_with_current_config, specimen=specimen),
         inputs=[
             question_selector,
-            label_output
+            label_probs_state,
             ],
         outputs=[generation_guidance, generation_button],
         )
 
     generation_button.click(
         fn=partial(generate_comments_with_current_config, specimen=specimen),
-        inputs=[question_selector, label_output],
+        inputs=[question_selector, label_probs_state],
         outputs=comment_output,
     )
 
@@ -756,6 +760,7 @@ def build_main_page(specimen="cervix"):
             inputs=None,
             outputs=[
                 label_output,
+                label_probs_state,
                 generation_guidance,
                 generation_button,
                 comment_output,
@@ -768,6 +773,7 @@ def build_main_page(specimen="cervix"):
         config_table,
         image_input,
         label_output,
+        label_probs_state,
         generation_guidance,
         generation_button,
         comment_output,
