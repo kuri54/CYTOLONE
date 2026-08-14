@@ -415,7 +415,7 @@ class ManualGenerationUXTests(unittest.TestCase):
             self.assertFalse(guidance["visible"])
             self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS[language])
             self.assertFalse(button["visible"])
-            self.assertFalse(button["interactive"])
+            self.assertTrue(button["interactive"])
             self.assertEqual(comment["value"], "")
             self.assertEqual(capture["value"], "")
 
@@ -448,6 +448,7 @@ class ManualGenerationUXTests(unittest.TestCase):
             )
         self.assertFalse(guidance["visible"])
         self.assertFalse(button["visible"])
+        self.assertTrue(button["interactive"])
 
         full_question = "What do you think of this image?"
         with patch(
@@ -464,6 +465,7 @@ class ManualGenerationUXTests(unittest.TestCase):
             )
         self.assertFalse(guidance["visible"])
         self.assertFalse(button["visible"])
+        self.assertTrue(button["interactive"])
 
     def test_manual_generation_uses_labels_without_llm_gen_gate(self):
         config = self._config(llm_gen=False)
@@ -511,6 +513,9 @@ class ManualGenerationUXTests(unittest.TestCase):
             lambda item: item["type"] == "button"
             and item["props"].get("value") == MANUAL_GENERATION_BUTTON_LABELS["en"]
         )
+        button_component = next(item for item in components if item["id"] == button_id)
+        self.assertFalse(button_component["props"].get("visible"))
+        self.assertTrue(button_component["props"].get("interactive"))
         comment_id = component_id(
             lambda item: item["props"].get("elem_classes") == ["comment-box"]
         )

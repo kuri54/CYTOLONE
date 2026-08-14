@@ -534,7 +534,7 @@ def _manual_generation_button_update(language, visible=False):
     return gr.update(
         value=MANUAL_GENERATION_BUTTON_LABELS[language],
         visible=visible,
-        interactive=visible,
+        interactive=True,
     )
 
 
@@ -708,7 +708,7 @@ def build_main_page(specimen="cervix"):
             generation_button = gr.Button(
                 MANUAL_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
                 visible=False,
-                interactive=False,
+                interactive=True,
             )
             comment_output = gr.Markdown(
                 label="Comments",
