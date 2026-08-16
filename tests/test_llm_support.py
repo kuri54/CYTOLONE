@@ -116,6 +116,28 @@ class LLMRegistryTests(unittest.TestCase):
         self.assertEqual(get_llm_spec("gpt-oss-120b").runtime, "mlx-lm")
         self.assertTrue(get_llm_spec("gpt-oss-120b").legacy)
 
+    def test_qwen38_registry_contains_only_verified_non_mtp_choices(self):
+        qwen38 = {
+            key: spec
+            for key, spec in LLM_MODEL_REGISTRY.items()
+            if key.startswith("qwen3.8-")
+        }
+        self.assertEqual(
+            set(qwen38), {"qwen3.8-27b-4bit", "qwen3.8-27b-8bit"}
+        )
+        self.assertEqual(
+            {key: spec.repo_id for key, spec in qwen38.items()},
+            {
+                "qwen3.8-27b-4bit": "mlx-community/Qwen3.8-27B-4bit",
+                "qwen3.8-27b-8bit": "mlx-community/Qwen3.8-27B-8bit",
+            },
+        )
+        self.assertTrue(all(spec.runtime == "mlx-vlm" for spec in qwen38.values()))
+        self.assertTrue(all(not spec.legacy for spec in qwen38.values()))
+        self.assertTrue(all("Preliminary" in spec.memory_recommendation for spec in qwen38.values()))
+        self.assertEqual(qwen38["qwen3.8-27b-4bit"].download_size, "about 16.1 GB")
+        self.assertEqual(qwen38["qwen3.8-27b-8bit"].download_size, "about 29.5 GB")
+
     def test_download_targets_include_selected_llm_when_generation_is_disabled(self):
         targets = get_download_targets(
             {
@@ -126,6 +148,16 @@ class LLMRegistryTests(unittest.TestCase):
         )
         self.assertEqual(len(targets), 2)
         self.assertIn("mlx-community/Qwen3.5-9B-4bit", targets)
+
+    def test_download_targets_include_qwen38_choice(self):
+        targets = get_download_targets(
+            {
+                "MODEL": "v1.1",
+                "LLM_MODEL": "qwen3.8-27b-8bit",
+                "LLM_GEN": False,
+            }
+        )
+        self.assertIn("mlx-community/Qwen3.8-27B-8bit", targets)
 
 
 class PromptV2Tests(unittest.TestCase):
@@ -384,6 +416,22 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 self.assertEqual(context.exception.code, 2)
                 self.assertEqual(config_path.read_text(encoding="utf-8"), before)
 
+    def test_cli_accepts_qwen38_registry_choice(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict("os.environ", {"CYTOLONE_DATA_ROOT": temporary}):
+                config = read_config()
+                write_config(config)
+                with patch.object(
+                    sys,
+                    "argv",
+                    ["cytolone-config", "--LLM_MODEL", "qwen3.8-27b-4bit"],
+                ):
+                    config_main()
+
+                self.assertEqual(
+                    read_config()["SETTINGS"]["LLM_MODEL"], "qwen3.8-27b-4bit"
+                )
+
 
 class ManualGenerationUXTests(unittest.TestCase):
     QUESTION = "What is the diagnosis for this image?"
@@ -630,6 +678,43 @@ class RuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(mlx_core.new_thread_local_stream.call_count, 2)
         for stream_call in mlx_core.new_thread_local_stream.call_args_list:
             self.assertEqual(stream_call.args, ("gpu device",))
+
+    def test_mlx_vlm_06_stream_replacement_updates_split_generation_modules(self):
+        old_stream = object()
+        stream = object()
+        generation_module = types.SimpleNamespace(generation_stream=old_stream)
+        split_modules = {
+            name: types.SimpleNamespace(generation_stream=old_stream)
+            for name in (
+                "mlx_vlm.generate.common",
+                "mlx_vlm.generate.ar",
+                "mlx_vlm.generate.dispatch",
+                "mlx_vlm.generate.diffusion",
+            )
+        }
+        mlx_core = types.SimpleNamespace(
+            default_device=Mock(return_value="gpu device"),
+            new_thread_local_stream=Mock(return_value=stream),
+        )
+
+        def import_module(name):
+            return {
+                "mlx_vlm.generate": generation_module,
+                "mlx.core": mlx_core,
+            }[name]
+
+        with patch(
+            "CYTOLONE.llm_runtime.importlib.import_module",
+            side_effect=import_module,
+        ), patch.dict(
+            sys.modules,
+            {"mlx_vlm.generate": generation_module, **split_modules},
+        ):
+            self.assertIs(_set_mlx_vlm_thread_local_stream(), stream)
+
+        self.assertIs(generation_module.generation_stream, stream)
+        for module in split_modules.values():
+            self.assertIs(module.generation_stream, stream)
 
     def test_qwen_runtime_is_text_only_and_disables_thinking(self):
         with tempfile.TemporaryDirectory() as temporary:

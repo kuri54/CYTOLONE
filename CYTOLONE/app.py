@@ -57,13 +57,13 @@ def _cytolone_blocks():
     """Create a themed Blocks app across supported Gradio constructor APIs."""
 
     try:
-        return gr.Blocks(title="CYTOLONE", theme=CYTOLONE_THEME)
+        app = gr.Blocks(title="CYTOLONE", theme=CYTOLONE_THEME)
     except TypeError as exc:
         if "unexpected keyword argument 'theme'" not in str(exc):
             raise
         app = gr.Blocks(title="CYTOLONE")
-        app.theme = CYTOLONE_THEME
-        return app
+    app.theme = CYTOLONE_THEME
+    return app
 
 PAGE_TABS_CSS = """
 #page-tabs > .tab-wrapper > .tab-container[role="tablist"] > button:not([data-tab-id="launcher"]),

@@ -20,6 +20,13 @@ class MissingLLMModelError(LLMRuntimeError):
 
 
 _MLX_VLM_GENERATION_LOCK = threading.Lock()
+_MLX_VLM_GENERATION_STREAM_MODULES = (
+    "mlx_vlm.generate",
+    "mlx_vlm.generate.common",
+    "mlx_vlm.generate.ar",
+    "mlx_vlm.generate.dispatch",
+    "mlx_vlm.generate.diffusion",
+)
 
 
 @dataclass(frozen=True)
@@ -119,7 +126,7 @@ def _legacy_sampler(settings):
 
 
 def _set_mlx_vlm_thread_local_stream():
-    """Work around mlx-vlm 0.4.4's thread-bound generation stream."""
+    """Refresh the worker-local stream used by mlx-vlm 0.4.4 and 0.6.8."""
 
     try:
         generation_module = importlib.import_module("mlx_vlm.generate")
@@ -130,7 +137,14 @@ def _set_mlx_vlm_thread_local_stream():
         stream = new_thread_local_stream(
             mlx_core.default_device()
         )
-        generation_module.generation_stream = stream
+        for module_name in _MLX_VLM_GENERATION_STREAM_MODULES:
+            module = (
+                generation_module
+                if module_name == "mlx_vlm.generate"
+                else sys.modules.get(module_name)
+            )
+            if module is not None and hasattr(module, "generation_stream"):
+                module.generation_stream = stream
         return stream
     except (ImportError, AttributeError):
         return

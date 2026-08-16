@@ -91,6 +91,8 @@ def main():
             "qwen3.5-9b-8bit",
             "qwen3.5-27b-5bit",
             "qwen3.5-27b-8bit",
+            "qwen3.8-27b-4bit",
+            "qwen3.8-27b-8bit",
             "gpt-oss-120b",
             "gpt-oss-20b",
             "deepseek-r1",
