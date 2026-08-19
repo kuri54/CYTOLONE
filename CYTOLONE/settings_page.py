@@ -4,8 +4,8 @@ from CYTOLONE.app_paths import config_path
 from CYTOLONE.default_config.config_manager import read_config, write_config
 from CYTOLONE.model import (
     APP_MODEL_CHOICES,
-    LLM_MODEL_DISPLAY_CHOICES,
     LLM_MODEL_CHOICES,
+    LLM_MODEL_DISPLAY_CHOICES,
 )
 
 
@@ -105,29 +105,10 @@ def apply_settings(
     )
 
 
-def _model_choices_markdown():
-    lines = [
-        "**LLM model selection** — choose manually. Memory figures are preliminary and require user validation.",
-        "",
-        "| Model | Tier | Download | Unified memory |",
-        "|---|---|---:|---:|",
-    ]
-    from CYTOLONE.model import get_llm_spec
-
-    for _, key in LLM_MODEL_DISPLAY_CHOICES:
-        spec = get_llm_spec(key)
-        lines.append(
-            f"| {spec.display_name} (`{key}`) | {spec.tier} | "
-            f"{spec.download_size} | {spec.memory_recommendation} |"
-        )
-    return "\n".join(lines)
-
-
 def build_settings_page():
     values = get_settings_values()
 
     gr.Markdown("# Settings")
-    gr.Markdown(_model_choices_markdown())
 
     language = gr.Dropdown(
         choices=["en", "ja"],

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from CYTOLONE.app_paths import config_path
 from CYTOLONE.config_validation import validate_llm_settings
+from CYTOLONE.model import LLM_MODEL_CHOICES
 
 CONFIG_PATH = "CYTOLONE/config.ini"
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "default_config.ini"
@@ -26,6 +27,8 @@ def _merge_default_settings(config):
     if "SETTINGS" in defaults:
         for key, value in defaults["SETTINGS"].items():
             config["SETTINGS"].setdefault(key, value)
+    if config["SETTINGS"].get("LLM_MODEL") not in LLM_MODEL_CHOICES:
+        config["SETTINGS"]["LLM_MODEL"] = LLM_MODEL_CHOICES[0]
     return config
 
 
@@ -86,17 +89,7 @@ def main():
     parser.add_argument("--MODEL", choices=["v1.0", "v1.1"])
     parser.add_argument(
         "--LLM_MODEL",
-        choices=[
-            "qwen3.5-9b-4bit",
-            "qwen3.5-9b-8bit",
-            "qwen3.5-27b-5bit",
-            "qwen3.5-27b-8bit",
-            "qwen3.8-27b-4bit",
-            "qwen3.8-27b-8bit",
-            "gpt-oss-120b",
-            "gpt-oss-20b",
-            "deepseek-r1",
-        ],
+        choices=LLM_MODEL_CHOICES,
     )
     parser.add_argument("--LLM_GEN", choices=["True", "False"])
     parser.add_argument("--LLM_GEN_THRESHOLD", type=float)

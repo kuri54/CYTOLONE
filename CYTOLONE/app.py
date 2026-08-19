@@ -28,7 +28,7 @@ from CYTOLONE.download_models import (
     download_model_with_status,
     model_management_summary,
 )
-from CYTOLONE.llm_prompt import build_prompt_v2
+from CYTOLONE.llm_prompt import build_concise_prompt_v2, build_prompt_v2
 from CYTOLONE.llm_runtime import LLMRuntimeError, LocalLLMRuntime
 from CYTOLONE.model_storage import model_directory_is_complete
 from CYTOLONE.scale_check.scale_checker import build_scale_checker_page
@@ -47,6 +47,10 @@ MANUAL_GENERATION_BUTTON_LABELS = {
     "ja": "詳細な鑑別所見を生成",
     "en": "Generate detailed differential findings",
 }
+CONCISE_GENERATION_BUTTON_LABELS = {
+    "ja": "簡潔な鑑別所見を生成",
+    "en": "Generate concise differential findings",
+}
 MANUAL_GENERATION_GUIDANCE = {
     "ja": "判定が拮抗しています。生成は任意で、時間がかかる場合があります。",
     "en": "The top two diagnoses are close. Generation is optional and may take some time.",
@@ -54,14 +58,9 @@ MANUAL_GENERATION_GUIDANCE = {
 
 
 def _cytolone_blocks():
-    """Create a themed Blocks app across supported Gradio constructor APIs."""
+    """Create the Blocks app; Gradio 6 receives the theme at launch."""
 
-    try:
-        app = gr.Blocks(title="CYTOLONE", theme=CYTOLONE_THEME)
-    except TypeError as exc:
-        if "unexpected keyword argument 'theme'" not in str(exc):
-            raise
-        app = gr.Blocks(title="CYTOLONE")
+    app = gr.Blocks(title="CYTOLONE")
     app.theme = CYTOLONE_THEME
     return app
 
@@ -478,7 +477,6 @@ def _model_management_control_updates(role, key, other_key):
         gr.update(choices=APP_MODEL_DISPLAY_CHOICES, value=app_key),
         gr.update(choices=LLM_MODEL_DISPLAY_CHOICES, value=llm_key),
         gr.update(value=False),
-        gr.update(value=False),
     )
 
 
@@ -503,6 +501,18 @@ def delete_model_from_ui(role, key, confirmation, other_key):
         summary,
         *_model_management_control_updates(role, key, other_key),
     )
+
+
+def delete_application_model_from_ui(key, confirmation, llm_key):
+    """Keep the application delete event's confirmation input explicit."""
+
+    return delete_model_from_ui("application", key, confirmation, llm_key)
+
+
+def delete_llm_model_from_ui(key, confirmation, app_key):
+    """Keep the LLM delete event's confirmation input explicit."""
+
+    return delete_model_from_ui("llm", key, confirmation, app_key)
 
 
 def reset_delete_confirmation():
@@ -538,6 +548,21 @@ def _manual_generation_button_update(language, visible=False):
     )
 
 
+def _concise_generation_button_update(language, visible=False):
+    return gr.update(
+        value=CONCISE_GENERATION_BUTTON_LABELS[language],
+        visible=visible,
+        interactive=True,
+    )
+
+
+def _manual_generation_buttons_update(language, visible=False):
+    return (
+        _concise_generation_button_update(language, visible),
+        _manual_generation_button_update(language, visible),
+    )
+
+
 def reset_analysis_outputs(language=None):
     if language not in MANUAL_GENERATION_BUTTON_LABELS:
         language = load_config()["LANGUAGE"]
@@ -546,32 +571,44 @@ def reset_analysis_outputs(language=None):
         gr.update(value=None),
         {},
         gr.update(value="", visible=False),
-        _manual_generation_button_update(language),
+        *_manual_generation_buttons_update(language),
         gr.update(value=""),
         gr.update(value=""),
     )
 
 
-def generate_comments(choice_caption, label_probs, specimen, config):
+def generate_comments(choice_caption, label_probs, specimen, config, mode="detailed"):
     if not _manual_generation_available(choice_caption, label_probs, specimen, config):
         return ""
+    if mode not in {"concise", "detailed"}:
+        raise ValueError(f"Unsupported manual generation mode: {mode}")
 
     top_labels = _top_two_label_probs(label_probs)
 
     llm_model_path = get_llm_id(config["LLM_MODEL"])
-    prompt = build_prompt_v2(
+    prompt_builder = (
+        build_concise_prompt_v2 if mode == "concise" else build_prompt_v2
+    )
+    prompt = prompt_builder(
         specimen,
         config["LANGUAGE"],
         top_labels[0][0],
         top_labels[1][0],
     )
 
+    generation_settings = config
+    if mode == "concise":
+        generation_settings = dict(config)
+        generation_settings["LLM_MAX_TOKENS"] = min(
+            int(config.get("LLM_MAX_TOKENS", 512)), 384
+        )
+
     try:
         generated_text = llm_runtime.generate(
             model_key=config["LLM_MODEL"],
             model_path=models_path() / llm_model_path,
             messages=prompt.messages,
-            settings=config,
+            settings=generation_settings,
         )
     except LLMRuntimeError as exc:
         raise gr.Error(str(exc)) from None
@@ -623,12 +660,20 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
     )
     return label_probs, label_probs
 
-def generate_comments_with_current_config(choice_caption, label_probs, specimen):
+def generate_comments_with_current_config(
+    choice_caption, label_probs, specimen, mode="detailed"
+):
     config, question, _, _ = get_main_context(specimen)
     if choice_caption not in question:
         choice_caption = next(iter(question))
 
-    return generate_comments(choice_caption, label_probs, specimen=specimen, config=config)
+    return generate_comments(
+        choice_caption,
+        label_probs,
+        specimen=specimen,
+        config=config,
+        mode=mode,
+    )
 
 
 def show_manual_generation_with_current_config(choice_caption, label_probs, specimen):
@@ -639,13 +684,13 @@ def show_manual_generation_with_current_config(choice_caption, label_probs, spec
     if not _manual_generation_available(choice_caption, label_probs, specimen, config):
         return (
             gr.update(value="", visible=False),
-            _manual_generation_button_update(config["LANGUAGE"]),
+            *_manual_generation_buttons_update(config["LANGUAGE"]),
         )
 
     language = config["LANGUAGE"]
     return (
         gr.update(value=MANUAL_GENERATION_GUIDANCE[language], visible=True),
-        _manual_generation_button_update(language, visible=True),
+        *_manual_generation_buttons_update(language, visible=True),
     )
 
 def build_main_page(specimen="cervix"):
@@ -705,7 +750,12 @@ def build_main_page(specimen="cervix"):
 
         with gr.Column(min_width=400):
             generation_guidance = gr.Markdown(value="", visible=False)
-            generation_button = gr.Button(
+            concise_generation_button = gr.Button(
+                CONCISE_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
+                visible=False,
+                interactive=True,
+            )
+            detailed_generation_button = gr.Button(
                 MANUAL_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
                 visible=False,
                 interactive=True,
@@ -722,7 +772,8 @@ def build_main_page(specimen="cervix"):
             label_output,
             label_probs_state,
             generation_guidance,
-            generation_button,
+            concise_generation_button,
+            detailed_generation_button,
             comment_output,
             capture_payload,
         ],
@@ -745,11 +796,29 @@ def build_main_page(specimen="cervix"):
             question_selector,
             label_probs_state,
             ],
-        outputs=[generation_guidance, generation_button],
+        outputs=[
+            generation_guidance,
+            concise_generation_button,
+            detailed_generation_button,
+        ],
         )
 
-    generation_button.click(
-        fn=partial(generate_comments_with_current_config, specimen=specimen),
+    concise_generation_button.click(
+        fn=partial(
+            generate_comments_with_current_config,
+            specimen=specimen,
+            mode="concise",
+        ),
+        inputs=[question_selector, label_probs_state],
+        outputs=comment_output,
+    )
+
+    detailed_generation_button.click(
+        fn=partial(
+            generate_comments_with_current_config,
+            specimen=specimen,
+            mode="detailed",
+        ),
         inputs=[question_selector, label_probs_state],
         outputs=comment_output,
     )
@@ -762,7 +831,8 @@ def build_main_page(specimen="cervix"):
                 label_output,
                 label_probs_state,
                 generation_guidance,
-                generation_button,
+                concise_generation_button,
+                detailed_generation_button,
                 comment_output,
                 capture_payload,
             ],
@@ -775,7 +845,8 @@ def build_main_page(specimen="cervix"):
         label_output,
         label_probs_state,
         generation_guidance,
-        generation_button,
+        concise_generation_button,
+        detailed_generation_button,
         comment_output,
         capture_payload,
     )
@@ -799,11 +870,6 @@ def build_model_management_page():
     with gr.Row():
         app_download = gr.Button("Download application model", variant="primary")
         app_delete = gr.Button("Delete application model")
-    app_confirm = gr.Checkbox(
-        label="Confirm deletion of the selected application model",
-        value=False,
-    )
-
     llm_model = gr.Dropdown(
         choices=LLM_MODEL_DISPLAY_CHOICES,
         value=config["LLM_MODEL"],
@@ -813,20 +879,22 @@ def build_model_management_page():
     with gr.Row():
         llm_download = gr.Button("Download LLM", variant="primary")
         llm_delete = gr.Button("Delete LLM")
-    llm_confirm = gr.Checkbox(
-        label="Confirm deletion of the selected LLM",
+    delete_confirm = gr.Checkbox(
+        label="Confirm deletion of the selected model",
         value=False,
+        interactive=True,
+        elem_id="confirm-delete-selected-model",
     )
 
     app_model.change(
         fn=reset_delete_confirmation,
         inputs=None,
-        outputs=app_confirm,
+        outputs=delete_confirm,
     )
     llm_model.change(
         fn=reset_delete_confirmation,
         inputs=None,
-        outputs=llm_confirm,
+        outputs=delete_confirm,
     )
 
     app_download.click(
@@ -837,8 +905,7 @@ def build_model_management_page():
             summary,
             app_model,
             llm_model,
-            app_confirm,
-            llm_confirm,
+            delete_confirm,
         ],
     )
     llm_download.click(
@@ -849,35 +916,32 @@ def build_model_management_page():
             summary,
             app_model,
             llm_model,
-            app_confirm,
-            llm_confirm,
+            delete_confirm,
         ],
     )
     app_delete.click(
-        fn=partial(delete_model_from_ui, "application"),
-        inputs=[app_model, app_confirm, llm_model],
+        fn=delete_application_model_from_ui,
+        inputs=[app_model, delete_confirm, llm_model],
         outputs=[
             status,
             summary,
             app_model,
             llm_model,
-            app_confirm,
-            llm_confirm,
+            delete_confirm,
         ],
     )
     llm_delete.click(
-        fn=partial(delete_model_from_ui, "llm"),
-        inputs=[llm_model, llm_confirm, app_model],
+        fn=delete_llm_model_from_ui,
+        inputs=[llm_model, delete_confirm, app_model],
         outputs=[
             status,
             summary,
             app_model,
             llm_model,
-            app_confirm,
-            llm_confirm,
+            delete_confirm,
         ],
     )
-    return summary, app_model, llm_model, app_confirm, llm_confirm
+    return summary, app_model, llm_model, delete_confirm
 
 
 def build_model_download_page():
@@ -932,8 +996,7 @@ def build_app():
                     model_management_summary_output,
                     app_model_management_choice,
                     llm_model_management_choice,
-                    app_model_delete_confirm,
-                    llm_model_delete_confirm,
+                    model_delete_confirm,
                 ) = build_model_management_page()
 
         def show_launcher():
@@ -955,7 +1018,6 @@ def build_app():
                 model_management_summary(),
                 gr.update(choices=APP_MODEL_DISPLAY_CHOICES, value=config["MODEL"]),
                 gr.update(choices=LLM_MODEL_DISPLAY_CHOICES, value=config["LLM_MODEL"]),
-                gr.update(value=False),
                 gr.update(value=False),
             )
 
@@ -992,8 +1054,7 @@ def build_app():
                 model_management_summary_output,
                 app_model_management_choice,
                 llm_model_management_choice,
-                app_model_delete_confirm,
-                llm_model_delete_confirm,
+                model_delete_confirm,
             ],
         )
 

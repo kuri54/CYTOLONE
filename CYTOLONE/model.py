@@ -51,59 +51,14 @@ class RegisteredModelSpec:
 
 
 LLM_MODEL_REGISTRY = {
-    "qwen3.5-9b-4bit": LLMModelSpec(
-        key="qwen3.5-9b-4bit",
-        repo_id="mlx-community/Qwen3.5-9B-4bit",
-        runtime="mlx-vlm",
-        display_name="Qwen3.5 9B (4-bit)",
-        tier="Lightweight / default",
-        download_size="5.95 GB",
-        memory_recommendation="16 GB or more",
-    ),
-    "qwen3.5-9b-8bit": LLMModelSpec(
-        key="qwen3.5-9b-8bit",
-        repo_id="mlx-community/Qwen3.5-9B-8bit",
-        runtime="mlx-vlm",
-        display_name="Qwen3.5 9B (8-bit)",
-        tier="Lightweight quality",
-        download_size="10.4 GB",
-        memory_recommendation="24 GB or more",
-    ),
     "qwen3.5-27b-5bit": LLMModelSpec(
         key="qwen3.5-27b-5bit",
         repo_id="mlx-community/Qwen3.5-27B-5bit",
         runtime="mlx-vlm",
         display_name="Qwen3.5 27B (5-bit)",
-        tier="Recommended quality",
+        tier="Recommended",
         download_size="19.4 GB",
-        memory_recommendation="32 GB or more",
-    ),
-    "qwen3.5-27b-8bit": LLMModelSpec(
-        key="qwen3.5-27b-8bit",
-        repo_id="mlx-community/Qwen3.5-27B-8bit",
-        runtime="mlx-vlm",
-        display_name="Qwen3.5 27B (8-bit)",
-        tier="High quality",
-        download_size="29.5 GB",
-        memory_recommendation="48 GB or more",
-    ),
-    "qwen3.8-27b-4bit": LLMModelSpec(
-        key="qwen3.8-27b-4bit",
-        repo_id="mlx-community/Qwen3.8-27B-4bit",
-        runtime="mlx-vlm",
-        display_name="Qwen3.8 27B (4-bit)",
-        tier="Validation candidate",
-        download_size="about 16.1 GB",
-        memory_recommendation="Preliminary; validate locally",
-    ),
-    "qwen3.8-27b-8bit": LLMModelSpec(
-        key="qwen3.8-27b-8bit",
-        repo_id="mlx-community/Qwen3.8-27B-8bit",
-        runtime="mlx-vlm",
-        display_name="Qwen3.8 27B (8-bit)",
-        tier="Validation candidate",
-        download_size="about 29.5 GB",
-        memory_recommendation="Preliminary; validate locally",
+        memory_recommendation="64 GB or more",
     ),
     "gpt-oss-120b": LLMModelSpec(
         key="gpt-oss-120b",
@@ -122,19 +77,8 @@ LLM_MODEL_REGISTRY = {
         runtime="mlx-lm",
         display_name="GPT-OSS 20B (Legacy compatibility)",
         tier="Legacy compatibility",
-        download_size="existing repository",
-        memory_recommendation="Preliminary; validate locally",
-        status="legacy",
-        legacy=True,
-    ),
-    "deepseek-r1": LLMModelSpec(
-        key="deepseek-r1",
-        repo_id="mlx-community/DeepSeek-R1-Distill-Qwen-32B-Japanese-8bit",
-        runtime="mlx-lm",
-        display_name="DeepSeek-R1 (Legacy compatibility)",
-        tier="Legacy compatibility",
-        download_size="existing repository",
-        memory_recommendation="Preliminary; validate locally",
+        download_size="12.1 GB",
+        memory_recommendation="64 GB or more",
         status="legacy",
         legacy=True,
     ),
@@ -230,7 +174,7 @@ def iter_registered_models():
 
 def format_llm_model_table():
     lines = [
-        "| Model | Tier | Repository | Download size | Preliminary unified memory | Status |",
+        "| Model | Tier | Repository | Download size | Unified memory guidance | Status |",
         "|---|---|---|---:|---:|---|",
     ]
     for spec in LLM_MODEL_REGISTRY.values():

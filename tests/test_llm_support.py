@@ -4,16 +4,22 @@ import tempfile
 import threading
 import types
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import gradio as gr
 
 from CYTOLONE.app import (
+    _cytolone_blocks,
     build_app,
     build_model_management_page,
     build_settings_page,
+    CONCISE_GENERATION_BUTTON_LABELS,
+    apply_settings_and_refresh_main,
+    delete_application_model_from_ui,
     delete_model_from_ui,
+    delete_llm_model_from_ui,
     download_model_from_ui,
     generate_comments,
     get_labels_for_order,
@@ -46,7 +52,7 @@ from CYTOLONE.label_caption import (
     get_label_caption,
     get_llm_diagnosis_label,
 )
-from CYTOLONE.llm_prompt import build_prompt_v2
+from CYTOLONE.llm_prompt import build_concise_prompt_v2, build_prompt_v2
 from CYTOLONE.llm_runtime import (
     LLMRuntimeError,
     LocalLLMRuntime,
@@ -54,7 +60,9 @@ from CYTOLONE.llm_runtime import (
     _set_mlx_vlm_thread_local_stream,
 )
 from CYTOLONE.model import (
+    LLM_MODEL_CHOICES,
     LLM_MODEL_REGISTRY,
+    LLM_MODEL_DISPLAY_CHOICES,
     get_llm_spec,
 )
 from CYTOLONE.model_storage import model_directory_is_complete
@@ -100,64 +108,71 @@ def make_sharded_model_directory(directory, missing_shard=False, include_index=T
 
 
 class LLMRegistryTests(unittest.TestCase):
-    def test_qwen_registry_contains_manual_choices_and_vlm_runtime(self):
+    def test_registry_and_choices_contain_only_the_public_llm_roster(self):
+        expected_keys = [
+            "qwen3.5-27b-5bit",
+            "gpt-oss-120b",
+            "gpt-oss-20b",
+        ]
+        self.assertEqual(list(LLM_MODEL_REGISTRY), expected_keys)
+        self.assertEqual(LLM_MODEL_CHOICES, expected_keys)
         self.assertEqual(
-            list(LLM_MODEL_REGISTRY)[:4],
-            [
-                "qwen3.5-9b-4bit",
-                "qwen3.5-9b-8bit",
-                "qwen3.5-27b-5bit",
-                "qwen3.5-27b-8bit",
-            ],
+            [key for _, key in LLM_MODEL_DISPLAY_CHOICES],
+            expected_keys,
         )
-        self.assertEqual(get_llm_spec("qwen3.5-9b-4bit").runtime, "mlx-vlm")
-        self.assertEqual(get_llm_spec("qwen3.5-9b-4bit").generation_defaults.max_tokens, 512)
-        self.assertFalse(get_llm_spec("qwen3.5-9b-4bit").generation_defaults.enable_thinking)
+        self.assertEqual(
+            LLM_MODEL_DISPLAY_CHOICES[0],
+            ("Qwen3.5 27B (5-bit)", "qwen3.5-27b-5bit"),
+        )
+        self.assertEqual(get_llm_spec("qwen3.5-27b-5bit").tier, "Recommended")
+        self.assertEqual(get_llm_spec("qwen3.5-27b-5bit").runtime, "mlx-vlm")
+        self.assertEqual(get_llm_spec("qwen3.5-27b-5bit").generation_defaults.max_tokens, 512)
+        self.assertFalse(get_llm_spec("qwen3.5-27b-5bit").generation_defaults.enable_thinking)
+        self.assertEqual(
+            get_llm_spec("qwen3.5-27b-5bit").memory_recommendation,
+            "64 GB or more",
+        )
         self.assertEqual(get_llm_spec("gpt-oss-120b").runtime, "mlx-lm")
         self.assertTrue(get_llm_spec("gpt-oss-120b").legacy)
 
-    def test_qwen38_registry_contains_only_verified_non_mtp_choices(self):
-        qwen38 = {
-            key: spec
-            for key, spec in LLM_MODEL_REGISTRY.items()
-            if key.startswith("qwen3.8-")
-        }
+        self.assertEqual(get_llm_spec("gpt-oss-20b").runtime, "mlx-lm")
+        self.assertTrue(get_llm_spec("gpt-oss-20b").legacy)
+        self.assertEqual(get_llm_spec("gpt-oss-20b").download_size, "12.1 GB")
         self.assertEqual(
-            set(qwen38), {"qwen3.8-27b-4bit", "qwen3.8-27b-8bit"}
+            get_llm_spec("gpt-oss-20b").memory_recommendation,
+            "64 GB or more",
         )
-        self.assertEqual(
-            {key: spec.repo_id for key, spec in qwen38.items()},
-            {
-                "qwen3.8-27b-4bit": "mlx-community/Qwen3.8-27B-4bit",
-                "qwen3.8-27b-8bit": "mlx-community/Qwen3.8-27B-8bit",
-            },
-        )
-        self.assertTrue(all(spec.runtime == "mlx-vlm" for spec in qwen38.values()))
-        self.assertTrue(all(not spec.legacy for spec in qwen38.values()))
-        self.assertTrue(all("Preliminary" in spec.memory_recommendation for spec in qwen38.values()))
-        self.assertEqual(qwen38["qwen3.8-27b-4bit"].download_size, "about 16.1 GB")
-        self.assertEqual(qwen38["qwen3.8-27b-8bit"].download_size, "about 29.5 GB")
+
+    def test_model_management_summary_lists_only_public_llm_roster(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = model_management_summary(
+                {"MODEL": "v1.1", "LLM_MODEL": "qwen3.5-27b-5bit"},
+                Path(temporary),
+            )
+
+        for key in LLM_MODEL_CHOICES:
+            self.assertIn(f"`{key}`", summary)
+        self.assertIn("| 12.1 GB | 64 GB or more |", summary)
+        for removed_key in (
+            "qwen3.5-9b-4bit",
+            "qwen3.5-9b-8bit",
+            "qwen3.5-27b-8bit",
+            "qwen3.8-27b-4bit",
+            "qwen3.8-27b-8bit",
+            "deepseek-r1",
+        ):
+            self.assertNotIn(removed_key, summary)
 
     def test_download_targets_include_selected_llm_when_generation_is_disabled(self):
         targets = get_download_targets(
             {
                 "MODEL": "v1.1",
-                "LLM_MODEL": "qwen3.5-9b-4bit",
+                "LLM_MODEL": "qwen3.5-27b-5bit",
                 "LLM_GEN": False,
             }
         )
         self.assertEqual(len(targets), 2)
-        self.assertIn("mlx-community/Qwen3.5-9B-4bit", targets)
-
-    def test_download_targets_include_qwen38_choice(self):
-        targets = get_download_targets(
-            {
-                "MODEL": "v1.1",
-                "LLM_MODEL": "qwen3.8-27b-8bit",
-                "LLM_GEN": False,
-            }
-        )
-        self.assertIn("mlx-community/Qwen3.8-27B-8bit", targets)
+        self.assertIn("mlx-community/Qwen3.5-27B-5bit", targets)
 
 
 class PromptV2Tests(unittest.TestCase):
@@ -203,29 +218,118 @@ class PromptV2Tests(unittest.TestCase):
 
         self.assertIn("no more than 6 bullet points total", english)
         self.assertIn("do not repeat a conclusion or add a summary", english)
-        self.assertIn("write exactly 4 bullets, one sentence each", english)
+        self.assertIn("write exactly 4 bullets, one sentence and one line each", english)
         self.assertIn("directly compare both candidates in the same sentence", english)
         self.assertIn("rather than listing candidates separately", english)
         self.assertIn("typical general patterns", english)
         self.assertIn("N/C ratio", english)
         self.assertIn("Keep Section 2 to at most 1 short, one-sentence bullet", english)
         self.assertIn("Keep Section 3 to at most 1 short, one-sentence bullet", english)
+        self.assertIn("Clinical information to confirm for the differential", english)
+        self.assertIn(
+            "Missing case-specific patient information does not mean that no relevant clinical factor exists",
+            english,
+        )
+        self.assertIn(
+            "state it as a conditional item to confirm even when it was not provided",
+            english,
+        )
+        self.assertIn(
+            'Say "Not provided" only when no highly relevant clinical item needs confirmation',
+            english,
+        )
         self.assertIn("actual cytology, clinical findings, and standard management guidance", english)
         self.assertIn("do not automatically recommend invasive tests, procedures, or treatment", english)
+        self.assertIn("multiple recognized morphological patterns or overlap", english)
+        self.assertIn("across each comparison axis", english)
         self.assertNotIn("serum hormone measurement", english)
 
         self.assertIn("箇条書きは全体で最大6個", japanese)
         self.assertIn("結論の反復や追加の要約は書かない", japanese)
         self.assertIn("第1セクションを最も詳しく", japanese)
-        self.assertIn("箇条書きはちょうど4個、各1文", japanese)
+        self.assertIn("箇条書きはちょうど4個、各1文・1行", japanese)
         self.assertIn("2候補を同じ文で直接比較", japanese)
         self.assertIn("候補ごとに別々に列挙せず", japanese)
         self.assertIn("N/C比", japanese)
         self.assertIn("第2セクションは最大1個の短い箇条書き（1文）", japanese)
         self.assertIn("第3セクションも最大1個の短い箇条書き（1文）", japanese)
+        self.assertIn("鑑別のために確認すべき臨床情報", japanese)
+        self.assertIn("症例固有の患者情報が未入力であることは", japanese)
+        self.assertIn("未提供でも「確認すべき項目」として条件付き", japanese)
+        self.assertIn("本当にない場合だけ「情報なし」", japanese)
         self.assertIn("実際の細胞診・臨床所見と標準的な管理指針", japanese)
         self.assertIn("侵襲的検査、処置、治療を自動的に勧めない", japanese)
+        self.assertIn("複数の既知形態パターンや重なり", japanese)
+        self.assertIn("各比較軸で反映", japanese)
         self.assertNotIn("血清ホルモン測定", japanese)
+
+    def test_detailed_prompt_has_no_diagnosis_specific_clinical_rules(self):
+        for language in ("en", "ja"):
+            system = build_prompt_v2(
+                "cervix", language, "Atrophy", "Adeno_carcinoma"
+            ).system
+            for forbidden in ("Atrophy", "Adenocarcinoma", "menopause", "年齢", "閉経"):
+                self.assertNotIn(forbidden, system)
+            self.assertNotRegex(system, r"\bage\b")
+
+    def test_concise_prompt_is_morphology_only_and_symmetric(self):
+        english = build_concise_prompt_v2(
+            "cervix",
+            "en",
+            "Mild_dysplasia",
+            "Atrophy",
+        )
+        japanese = build_concise_prompt_v2(
+            "cervix",
+            "ja",
+            "Mild_dysplasia",
+            "Atrophy",
+        )
+
+        self.assertIn("exactly 4 short Markdown bullet points", english.system)
+        self.assertIn('start exactly with "- "', english.system)
+        self.assertIn("one sentence and one line per bullet", english.system)
+        self.assertIn("same quality, comparison-axis, and morphological variation/overlap contract", english.system)
+        self.assertIn("stop immediately after the 4 bullets", english.system)
+        self.assertIn("morphology-based differential findings", english.system)
+        self.assertIn("direct comparison of both candidates", english.system)
+        self.assertIn("Do not output headings, clinical information, additional tests, management, procedures, treatment, a conclusion, or a summary", english.system)
+        self.assertNotIn("at most 2 bullet points total", english.system)
+        self.assertIn("have not inspected the cell image", english.system)
+        self.assertIn("do not make a final diagnosis", english.system)
+        self.assertNotIn("0.45", english.user)
+        self.assertNotIn("question", english.user.lower())
+        self.assertNotIn("probabilit", english.system.lower())
+        self.assertNotIn("question", english.system.lower())
+
+        self.assertIn("箇条書きはちょうど4個", japanese.system)
+        self.assertIn("必ず半角ハイフン+半角スペースの「- 」で開始", japanese.system)
+        self.assertIn("詳細版の第1セクションと同じ品質", japanese.system)
+        self.assertIn("4個の箇条書きを出したら直ちに停止", japanese.system)
+        self.assertIn("細胞形態学的な鑑別所見だけ", japanese.system)
+        self.assertIn("2候補の直接比較", japanese.system)
+        self.assertIn("見出し、臨床情報、追加検査、管理、処置、治療、結論、要約は絶対に書かない", japanese.system)
+        self.assertNotIn("最大2個", japanese.system)
+        self.assertIn("細胞画像を見ていません", japanese.system)
+        self.assertIn("最終診断を行わない", japanese.system)
+        self.assertNotIn("0.45", japanese.user)
+        self.assertNotIn("質問", japanese.user)
+        self.assertNotIn("確率", japanese.system)
+        self.assertNotIn("質問", japanese.system)
+
+    def test_prompt_uses_only_normalized_labels_without_question_or_probability(self):
+        prompt = build_prompt_v2(
+            "cervix",
+            "en",
+            "Mild_dysplasia",
+            "Atrophy",
+        )
+        self.assertIn("Mild dysplasia", prompt.user)
+        self.assertIn("Atrophy", prompt.user)
+        self.assertNotIn("0.45", prompt.user)
+        self.assertNotIn("probability", prompt.user.lower())
+        self.assertNotIn("Which differential findings should be reviewed?", prompt.user)
+        self.assertNotIn("image data", prompt.user.lower())
 
     def test_unknown_diagnosis_label_is_actionable(self):
         with self.assertRaisesRegex(ValueError, "Unknown diagnosis label"):
@@ -300,8 +404,69 @@ class DocumentationTests(unittest.TestCase):
                 self.assertNotIn(term, content, f"{term} should not appear in {path}")
             self.assertIn("Model Management", content)
 
+    def test_readmes_describe_both_generation_routes_and_label_boundary(self):
+        english = Path("README.md").read_text(encoding="utf-8")
+        japanese = Path("README_JA.md").read_text(encoding="utf-8")
+        expected_model_keys = [
+            "qwen3.5-27b-5bit",
+            "gpt-oss-120b",
+            "gpt-oss-20b",
+        ]
+        removed_model_keys = (
+            "qwen3.5-9b-4bit",
+            "qwen3.5-9b-8bit",
+            "qwen3.5-27b-8bit",
+            "qwen3.8-27b-4bit",
+            "qwen3.8-27b-8bit",
+            "deepseek-r1",
+        )
+        for content in (english, japanese):
+            model_keys = [
+                line.split("`")[1]
+                for line in content.splitlines()
+                if line.startswith("| `")
+            ]
+            self.assertEqual(model_keys, expected_model_keys)
+            for removed_key in removed_model_keys:
+                self.assertNotIn(removed_key, content)
+
+        self.assertIn("Concise differential findings", english)
+        self.assertIn("four morphology-only comparison points", english)
+        self.assertIn("Detailed differential findings", english)
+        self.assertIn("clinical information to confirm for the differential", english)
+        self.assertIn("potentially useful additional tests", english)
+        self.assertIn("Both modes pass no image to the LLM.", english)
+        self.assertIn("top two normalized", english)
+        self.assertIn("support information and are not final diagnoses.", english)
+        self.assertIn("Unified-memory guidance", english)
+        self.assertIn(
+            "`gpt-oss-20b` (Legacy compatibility) | `mlx-community/gpt-oss-20b-MXFP4-Q8` | 12.1 GB | 64 GB or more",
+            english,
+        )
+
+        self.assertIn("簡潔な鑑別所見", japanese)
+        self.assertIn("細胞形態学的な鑑別所見のみを4項目", japanese)
+        self.assertIn("詳細な鑑別所見", japanese)
+        self.assertIn("確認すべき臨床情報", japanese)
+        self.assertIn("役立つ可能性のある追加検査", japanese)
+        self.assertIn("LLMへ画像を渡さず", japanese)
+        self.assertIn("上位2つの正規化済み判定ラベルだけ", japanese)
+        self.assertIn("最終診断ではありません", japanese)
+        self.assertIn("ユニファイドメモリ目安", japanese)
+        self.assertIn(
+            "`gpt-oss-20b`（Legacy互換） | `mlx-community/gpt-oss-20b-MXFP4-Q8` | 12.1 GB | 64 GB以上",
+            japanese,
+        )
+
 
 class SettingsCompatibilityTests(unittest.TestCase):
+    def test_new_default_recommends_qwen35_27b_5bit(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            "os.environ", {"CYTOLONE_DATA_ROOT": temporary}
+        ):
+            config = read_config()
+        self.assertEqual(config["SETTINGS"]["LLM_MODEL"], "qwen3.5-27b-5bit")
+
     def test_old_config_inherits_new_defaults_without_replacing_old_choices(self):
         with tempfile.TemporaryDirectory() as temporary:
             old_path = Path(temporary) / "config.ini"
@@ -321,6 +486,44 @@ class SettingsCompatibilityTests(unittest.TestCase):
             self.assertEqual(config["SETTINGS"]["LLM_MAX_TOKENS"], "512")
             self.assertEqual(config["SETTINGS"]["LLM_SEED"], "42")
 
+    def test_removed_or_unknown_llm_config_falls_back_and_preserves_settings(self):
+        for old_llm_model in ("qwen3.8-27b-4bit", "unknown-local-model"):
+            with tempfile.TemporaryDirectory() as temporary:
+                old_path = Path(temporary) / "config.ini"
+                old_path.write_text(
+                    "[SETTINGS]\n"
+                    "LANGUAGE = ja\n"
+                    "MODEL = v1.0\n"
+                    f"LLM_MODEL = {old_llm_model}\n"
+                    "LLM_GEN = True\n"
+                    "LLM_GEN_THRESHOLD = 0.4\n"
+                    "WEBCAM_IMAGE_SIZE = 900\n"
+                    "DEBUG = True\n",
+                    encoding="utf-8",
+                )
+
+                settings = read_config(old_path)["SETTINGS"]
+
+            self.assertEqual(settings["LLM_MODEL"], "qwen3.5-27b-5bit")
+            self.assertEqual(settings["LANGUAGE"], "ja")
+            self.assertEqual(settings["MODEL"], "v1.0")
+            self.assertEqual(settings["LLM_GEN_THRESHOLD"], "0.4")
+            self.assertEqual(settings["WEBCAM_IMAGE_SIZE"], "900")
+            self.assertEqual(settings["DEBUG"], "True")
+
+    def test_settings_dropdown_uses_fallback_for_removed_config_model(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            "os.environ", {"CYTOLONE_DATA_ROOT": temporary}
+        ):
+            config = read_config()
+            config["SETTINGS"]["LLM_MODEL"] = "qwen3.8-27b-4bit"
+            write_config(config)
+            with gr.Blocks():
+                settings_components, _, _ = build_settings_page()
+
+        self.assertEqual(settings_components[2].value, "qwen3.5-27b-5bit")
+        self.assertEqual(settings_components[2].choices, LLM_MODEL_DISPLAY_CHOICES)
+
     def test_invalid_settings_do_not_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             with patch.dict("os.environ", {"CYTOLONE_DATA_ROOT": temporary}):
@@ -331,7 +534,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
                     apply_settings(
                         "en",
                         "v1.1",
-                        "qwen3.5-9b-4bit",
+                        "qwen3.5-27b-5bit",
                         0,
                         False,
                     )
@@ -341,7 +544,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
         values = validate_settings(
             "en",
             "v1.1",
-            "qwen3.5-9b-4bit",
+            "qwen3.5-27b-5bit",
             1024,
             False,
         )
@@ -362,7 +565,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 write_config(config)
 
                 result = apply_settings(
-                    "ja", "v1.0", "qwen3.5-9b-8bit", 900, True
+                    "ja", "v1.0", "qwen3.5-27b-5bit", 900, True
                 )
                 after = read_config()["SETTINGS"]
 
@@ -375,6 +578,26 @@ class SettingsCompatibilityTests(unittest.TestCase):
             self.assertEqual(after["LLM_TOP_K"], "12")
             self.assertEqual(after["LLM_SEED"], "9")
 
+    def test_normal_settings_callback_persists_selected_llm_model(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            "os.environ", {"CYTOLONE_DATA_ROOT": temporary}
+        ):
+            config = read_config()
+            config["SETTINGS"]["LLM_MODEL"] = "qwen3.5-27b-5bit"
+            write_config(config)
+            result = apply_settings_and_refresh_main(
+                "ja", "v1.0", "qwen3.5-27b-5bit", 900, True
+            )
+            after = read_config()["SETTINGS"]
+
+        self.assertEqual(after["LLM_MODEL"], "qwen3.5-27b-5bit")
+        self.assertEqual(len(result), 16)
+        summary = result[7]
+        llm_row = next(
+            row for row in summary.to_dict("records") if row["Item"] == "LLM Model"
+        )
+        self.assertEqual(llm_row["Value"], "Qwen3.5 27B (5-bit)")
+
     def test_normal_settings_values_and_main_summary_are_concise(self):
         with tempfile.TemporaryDirectory() as temporary:
             with patch.dict("os.environ", {"CYTOLONE_DATA_ROOT": temporary}):
@@ -383,7 +606,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 {
                     "LANGUAGE": "en",
                     "MODEL": "v1.1",
-                    "LLM_MODEL": "qwen3.5-9b-4bit",
+                    "LLM_MODEL": "qwen3.5-27b-5bit",
                     "LLM_GEN": False,
                     "LLM_GEN_THRESHOLD": 0.8,
                     "LLM_MAX_TOKENS": 512,
@@ -396,10 +619,47 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 }
             )
             self.assertEqual(len(values), 5)
+            self.assertIn(values[2], LLM_MODEL_REGISTRY)
             self.assertEqual(len(frame), 4)
+            llm_row = next(
+                row for row in frame.to_dict("records") if row["Item"] == "LLM Model"
+            )
+            self.assertEqual(llm_row["Section"], "Model")
+            self.assertEqual(llm_row["Value"], "Qwen3.5 27B (5-bit)")
             self.assertNotIn("Generate", set(frame["Item"]))
             self.assertNotIn("Threshold", set(frame["Item"]))
             self.assertNotIn("Temperature", set(frame["Item"]))
+
+    def test_main_summary_uses_registry_display_names_for_qwen_and_legacy(self):
+        base_config = {
+            "LANGUAGE": "en",
+            "MODEL": "v1.1",
+            "WEBCAM_IMAGE_SIZE": 1024,
+        }
+        for key, display_name in (
+            ("qwen3.5-27b-5bit", "Qwen3.5 27B (5-bit)"),
+            ("gpt-oss-120b", "GPT-OSS 120B (Legacy)"),
+        ):
+            frame = build_config_df({**base_config, "LLM_MODEL": key})
+            llm_row = next(
+                row for row in frame.to_dict("records") if row["Item"] == "LLM Model"
+            )
+            self.assertEqual(llm_row["Section"], "Model")
+            self.assertEqual(llm_row["Value"], display_name)
+            self.assertNotIn(key, llm_row["Value"])
+            self.assertFalse(
+                set(
+                    [
+                        "LLM_GEN",
+                        "LLM_GEN_THRESHOLD",
+                        "LLM_TEMPERATURE",
+                        "LLM_TOP_P",
+                        "LLM_TOP_K",
+                        "LLM_SEED",
+                    ]
+                )
+                & set(frame["Item"])
+            )
 
     def test_cli_rejects_invalid_llm_range_without_writing(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -416,7 +676,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 self.assertEqual(context.exception.code, 2)
                 self.assertEqual(config_path.read_text(encoding="utf-8"), before)
 
-    def test_cli_accepts_qwen38_registry_choice(self):
+    def test_cli_accepts_gpt_oss_20b_registry_choice(self):
         with tempfile.TemporaryDirectory() as temporary:
             with patch.dict("os.environ", {"CYTOLONE_DATA_ROOT": temporary}):
                 config = read_config()
@@ -424,13 +684,32 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 with patch.object(
                     sys,
                     "argv",
-                    ["cytolone-config", "--LLM_MODEL", "qwen3.8-27b-4bit"],
+                    ["cytolone-config", "--LLM_MODEL", "gpt-oss-20b"],
                 ):
                     config_main()
 
                 self.assertEqual(
-                    read_config()["SETTINGS"]["LLM_MODEL"], "qwen3.8-27b-4bit"
+                    read_config()["SETTINGS"]["LLM_MODEL"], "gpt-oss-20b"
                 )
+
+    def test_cli_rejects_removed_llm_choice_without_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict("os.environ", {"CYTOLONE_DATA_ROOT": temporary}):
+                config = read_config()
+                write_config(config)
+                config_path = Path(temporary, "config.ini")
+                before = config_path.read_text(encoding="utf-8")
+
+                with patch.object(
+                    sys,
+                    "argv",
+                    ["cytolone-config", "--LLM_MODEL", "qwen3.8-27b-4bit"],
+                ):
+                    with self.assertRaises(SystemExit) as context:
+                        config_main()
+
+                self.assertEqual(context.exception.code, 2)
+                self.assertEqual(config_path.read_text(encoding="utf-8"), before)
 
 
 class ManualGenerationUXTests(unittest.TestCase):
@@ -442,7 +721,7 @@ class ManualGenerationUXTests(unittest.TestCase):
         return {
             "LANGUAGE": language,
             "MODEL": "v1.1",
-            "LLM_MODEL": "qwen3.5-9b-4bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
             "LLM_GEN": llm_gen,
             "LLM_GEN_THRESHOLD": 0.8,
             "LLM_MAX_TOKENS": 512,
@@ -454,16 +733,30 @@ class ManualGenerationUXTests(unittest.TestCase):
             "DEBUG": False,
         }
 
-    def test_reset_clears_results_and_prepares_language_specific_button(self):
+    def test_reset_clears_results_and_prepares_both_language_specific_buttons(self):
         for language in ("ja", "en"):
-            label, label_probs, guidance, button, comment, capture = reset_analysis_outputs(language)
+            (
+                label,
+                label_probs,
+                guidance,
+                concise_button,
+                detailed_button,
+                comment,
+                capture,
+            ) = reset_analysis_outputs(language)
             self.assertIsNone(label["value"])
             self.assertEqual(label_probs, {})
             self.assertEqual(guidance["value"], "")
             self.assertFalse(guidance["visible"])
-            self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS[language])
-            self.assertFalse(button["visible"])
-            self.assertTrue(button["interactive"])
+            self.assertEqual(
+                concise_button["value"], CONCISE_GENERATION_BUTTON_LABELS[language]
+            )
+            self.assertEqual(
+                detailed_button["value"], MANUAL_GENERATION_BUTTON_LABELS[language]
+            )
+            for button in (concise_button, detailed_button):
+                self.assertFalse(button["visible"])
+                self.assertTrue(button["interactive"])
             self.assertEqual(comment["value"], "")
             self.assertEqual(capture["value"], "")
 
@@ -475,15 +768,22 @@ class ManualGenerationUXTests(unittest.TestCase):
             "CYTOLONE.app.get_main_context",
             return_value=(config, {question: "Diagnosis"}, [], self.ORDER),
         ):
-            guidance, button = show_manual_generation_with_current_config(
+            guidance, concise_button, detailed_button = show_manual_generation_with_current_config(
                 question, labels, "cervix"
             )
 
         self.assertTrue(guidance["visible"])
         self.assertEqual(guidance["value"], MANUAL_GENERATION_GUIDANCE["ja"])
-        self.assertTrue(button["visible"])
-        self.assertTrue(button["interactive"])
-        self.assertEqual(button["value"], MANUAL_GENERATION_BUTTON_LABELS["ja"])
+        self.assertTrue(concise_button["visible"])
+        self.assertTrue(detailed_button["visible"])
+        self.assertTrue(concise_button["interactive"])
+        self.assertTrue(detailed_button["interactive"])
+        self.assertEqual(
+            concise_button["value"], CONCISE_GENERATION_BUTTON_LABELS["ja"]
+        )
+        self.assertEqual(
+            detailed_button["value"], MANUAL_GENERATION_BUTTON_LABELS["ja"]
+        )
 
     def test_manual_offer_is_hidden_for_non_diagnosis_or_non_close_results(self):
         config = self._config()
@@ -491,12 +791,14 @@ class ManualGenerationUXTests(unittest.TestCase):
             "CYTOLONE.app.get_main_context",
             return_value=(config, self.QUESTION_MAP, [], self.ORDER),
         ):
-            guidance, button = show_manual_generation_with_current_config(
+            guidance, concise_button, detailed_button = show_manual_generation_with_current_config(
                 self.QUESTION, {"Atrophy": 0.8, "Mild_dysplasia": 0.1}, "cervix"
             )
         self.assertFalse(guidance["visible"])
-        self.assertFalse(button["visible"])
-        self.assertTrue(button["interactive"])
+        self.assertFalse(concise_button["visible"])
+        self.assertFalse(detailed_button["visible"])
+        self.assertTrue(concise_button["interactive"])
+        self.assertTrue(detailed_button["interactive"])
 
         full_question = "What do you think of this image?"
         with patch(
@@ -508,12 +810,14 @@ class ManualGenerationUXTests(unittest.TestCase):
                 self.ORDER,
             ),
         ):
-            guidance, button = show_manual_generation_with_current_config(
+            guidance, concise_button, detailed_button = show_manual_generation_with_current_config(
                 full_question, {"Atrophy": 0.45, "Mild_dysplasia": 0.40}, "cervix"
             )
         self.assertFalse(guidance["visible"])
-        self.assertFalse(button["visible"])
-        self.assertTrue(button["interactive"])
+        self.assertFalse(concise_button["visible"])
+        self.assertFalse(detailed_button["visible"])
+        self.assertTrue(concise_button["interactive"])
+        self.assertTrue(detailed_button["interactive"])
 
     def test_manual_generation_uses_labels_without_llm_gen_gate(self):
         config = self._config(llm_gen=False)
@@ -527,7 +831,27 @@ class ManualGenerationUXTests(unittest.TestCase):
         messages = generate_mock.call_args.kwargs["messages"]
         self.assertIn("Atrophy", messages[1]["content"])
         self.assertIn("Mild dysplasia", messages[1]["content"])
-        self.assertNotIn("image", messages[1]["content"].lower())
+        self.assertNotIn(self.QUESTION, messages[1]["content"])
+        self.assertNotIn("0.45", messages[1]["content"])
+
+    def test_concise_manual_generation_uses_384_token_hidden_budget(self):
+        config = self._config(llm_gen=False)
+        labels = {"Atrophy": 0.45, "Mild_dysplasia": 0.40}
+        with patch(
+            "CYTOLONE.app.llm_runtime.generate", return_value="generated findings"
+        ) as generate_mock:
+            output = generate_comments(
+                self.QUESTION, labels, "cervix", config, mode="concise"
+            )
+
+        self.assertEqual(output, "generated findings")
+        self.assertEqual(
+            generate_mock.call_args.kwargs["settings"]["LLM_MAX_TOKENS"], 384
+        )
+        self.assertIn(
+            "morphology-based differential findings",
+            generate_mock.call_args.kwargs["messages"][0]["content"],
+        )
 
     def test_build_app_wires_reset_classify_condition_and_manual_click(self):
         app = build_app()
@@ -557,13 +881,23 @@ class ManualGenerationUXTests(unittest.TestCase):
             and item["props"].get("visible") is False
             and item["props"].get("value") == ""
         )
-        button_id = component_id(
+        active_language = read_config()["SETTINGS"]["LANGUAGE"]
+        concise_button_id = component_id(
             lambda item: item["type"] == "button"
-            and item["props"].get("value") == MANUAL_GENERATION_BUTTON_LABELS["en"]
+            and item["props"].get("value")
+            == CONCISE_GENERATION_BUTTON_LABELS[active_language]
         )
-        button_component = next(item for item in components if item["id"] == button_id)
-        self.assertFalse(button_component["props"].get("visible"))
-        self.assertTrue(button_component["props"].get("interactive"))
+        detailed_button_id = component_id(
+            lambda item: item["type"] == "button"
+            and item["props"].get("value")
+            == MANUAL_GENERATION_BUTTON_LABELS[active_language]
+        )
+        for button_id in (concise_button_id, detailed_button_id):
+            button_component = next(
+                item for item in components if item["id"] == button_id
+            )
+            self.assertFalse(button_component["props"].get("visible"))
+            self.assertTrue(button_component["props"].get("interactive"))
         comment_id = component_id(
             lambda item: item["props"].get("elem_classes") == ["comment-box"]
         )
@@ -576,7 +910,8 @@ class ManualGenerationUXTests(unittest.TestCase):
             label_id,
             label_probs_state_id,
             guidance_id,
-            button_id,
+            concise_button_id,
+            detailed_button_id,
             comment_id,
             capture_id,
         }
@@ -600,19 +935,21 @@ class ManualGenerationUXTests(unittest.TestCase):
             dependency
             for dependency in dependencies
             if dependency["inputs"] == [question_id, label_probs_state_id]
-            and dependency["outputs"] == [guidance_id, button_id]
+            and dependency["outputs"]
+            == [guidance_id, concise_button_id, detailed_button_id]
         ]
         self.assertEqual(len(condition_events), 1)
 
         manual_events = [
             dependency
             for dependency in dependencies
-            if dependency["targets"] == [(button_id, "click")]
+            if dependency["targets"]
+            in [[(concise_button_id, "click")], [(detailed_button_id, "click")]]
             and dependency["inputs"] == [question_id, label_probs_state_id]
             and dependency["outputs"] == [comment_id]
         ]
-        self.assertEqual(len(manual_events), 1)
-        self.assertFalse(manual_events[0].get("js"))
+        self.assertEqual(len(manual_events), 2)
+        self.assertTrue(all(not event.get("js") for event in manual_events))
         self.assertEqual(
             len(
                 [
@@ -773,7 +1110,7 @@ class RuntimeAdapterTests(unittest.TestCase):
             ):
                 runtime = LocalLLMRuntime()
                 output = runtime.generate(
-                    "qwen3.5-9b-4bit",
+                    "qwen3.5-27b-5bit",
                     model_path,
                     [
                         {"role": "system", "content": "system"},
@@ -848,9 +1185,9 @@ class RuntimeAdapterTests(unittest.TestCase):
                 "CYTOLONE.llm_runtime._set_mlx_vlm_thread_local_stream"
             ) as set_stream:
                 runtime = LocalLLMRuntime()
-                runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
-                self.assertEqual(runtime.active_model_key, "qwen3.5-9b-4bit")
-                runtime.generate("qwen3.5-9b-4bit", qwen_path, [])
+                runtime.generate("qwen3.5-27b-5bit", qwen_path, [])
+                self.assertEqual(runtime.active_model_key, "qwen3.5-27b-5bit")
+                runtime.generate("qwen3.5-27b-5bit", qwen_path, [])
                 runtime.generate("gpt-oss-120b", legacy_path, [])
 
             self.assertEqual(runtime.active_model_key, "gpt-oss-120b")
@@ -895,18 +1232,18 @@ class RuntimeAdapterTests(unittest.TestCase):
             "CYTOLONE.llm_runtime._set_mlx_vlm_thread_local_stream"
         ) as set_stream:
             runtime = LocalLLMRuntime()
-            runtime._active_model_key = "qwen3.5-9b-4bit"
+            runtime._active_model_key = "qwen3.5-27b-5bit"
             runtime._model = object()
             runtime._processor = Mock()
             runtime._generate = generate_text
             model_path = Path(temporary) / "qwen"
 
             def run_first_worker():
-                outputs.append(runtime.generate("qwen3.5-9b-4bit", model_path, []))
+                outputs.append(runtime.generate("qwen3.5-27b-5bit", model_path, []))
 
             def run_second_worker():
                 second_call_started.set()
-                outputs.append(runtime.generate("qwen3.5-9b-4bit", model_path, []))
+                outputs.append(runtime.generate("qwen3.5-27b-5bit", model_path, []))
                 second_call_finished.set()
 
             first_worker = threading.Thread(target=run_first_worker)
@@ -950,7 +1287,7 @@ class RuntimeAdapterTests(unittest.TestCase):
             ):
                 with self.assertRaises(LLMRuntimeError) as context:
                     LocalLLMRuntime().generate(
-                        "qwen3.5-9b-4bit", model_path, []
+                        "qwen3.5-27b-5bit", model_path, []
                     )
 
             message = str(context.exception)
@@ -964,7 +1301,7 @@ class RuntimeAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(MissingLLMModelError) as context:
                 LocalLLMRuntime().generate(
-                    "qwen3.5-9b-4bit",
+                    "qwen3.5-27b-5bit",
                     Path(temporary) / "missing",
                     [],
                 )
@@ -975,7 +1312,7 @@ class DownloadIntegrityTests(unittest.TestCase):
     def test_download_models_loads_config_when_omitted(self):
         config = {
             "MODEL": "v1.1",
-            "LLM_MODEL": "qwen3.5-9b-4bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
             "LLM_GEN": False,
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -991,13 +1328,13 @@ class DownloadIntegrityTests(unittest.TestCase):
             self.assertEqual(registered.call_count, 2)
             self.assertEqual(
                 downloaded,
-                ["kuri54/mlx-CYTOLONE-v1.1", "mlx-community/Qwen3.5-9B-4bit"],
+                ["kuri54/mlx-CYTOLONE-v1.1", "mlx-community/Qwen3.5-27B-5bit"],
             )
 
     def test_download_cli_defaults_to_only_application_model(self):
         config = {
             "MODEL": "v1.1",
-            "LLM_MODEL": "qwen3.5-27b-8bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
         }
         with patch.object(sys, "argv", ["download-model"]), patch(
             "CYTOLONE.download_models.load_config", return_value=config
@@ -1011,7 +1348,7 @@ class DownloadIntegrityTests(unittest.TestCase):
     def test_download_cli_can_explicitly_download_one_llm_with_force(self):
         config = {
             "MODEL": "v1.1",
-            "LLM_MODEL": "qwen3.5-27b-8bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
         }
         with patch.object(sys, "argv", ["download-model", "llm", "--force"]), patch(
             "CYTOLONE.download_models.load_config", return_value=config
@@ -1020,7 +1357,7 @@ class DownloadIntegrityTests(unittest.TestCase):
         ) as download:
             download_main()
 
-        download.assert_called_once_with("llm", "qwen3.5-27b-8bit", force=True)
+        download.assert_called_once_with("llm", "qwen3.5-27b-5bit", force=True)
 
     def test_shard_without_index_is_not_installed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1036,7 +1373,7 @@ class DownloadIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = {
                 "MODEL": "v1.1",
-                "LLM_MODEL": "qwen3.5-9b-4bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
                 "LLM_GEN": False,
             }
             output_root = Path(temporary)
@@ -1061,15 +1398,15 @@ class DownloadIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = {
                 "MODEL": "v1.1",
-                "LLM_MODEL": "qwen3.5-9b-4bit",
+            "LLM_MODEL": "qwen3.5-27b-5bit",
                 "LLM_GEN": False,
             }
             output_root = Path(temporary)
             before = model_download_summary(config, output_root)
-            self.assertIn("Qwen3.5 9B (4-bit)", before)
-            self.assertIn("| yes | not installed | — | 5.95 GB | 16 GB or more |", before)
+            self.assertIn("Qwen3.5 27B (5-bit)", before)
+            self.assertIn("| yes | not installed | — | 19.4 GB | 64 GB or more |", before)
 
-            make_model_directory(output_root / "mlx-community" / "Qwen3.5-9B-4bit")
+            make_model_directory(output_root / "mlx-community" / "Qwen3.5-27B-5bit")
             after = model_download_summary(config, output_root)
             self.assertIn("| yes | installed |", after)
 
@@ -1168,7 +1505,7 @@ class ModelDeletionTests(unittest.TestCase):
     def test_delete_allows_one_incomplete_registered_model(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "Models"
-            target = root / "mlx-community" / "Qwen3.5-9B-4bit"
+            target = root / "mlx-community" / "Qwen3.5-27B-5bit"
             target.mkdir(parents=True)
             (target / "config.json").write_text("{}", encoding="utf-8")
             (target / "tokenizer.json").write_text("{}", encoding="utf-8")
@@ -1178,7 +1515,7 @@ class ModelDeletionTests(unittest.TestCase):
             with patch("CYTOLONE.download_models.models_path", return_value=root):
                 deleted = delete_registered_model(
                     "llm",
-                    "qwen3.5-9b-4bit",
+                    "qwen3.5-27b-5bit",
                     confirmation=True,
                     release_callback=released,
                 )
@@ -1243,30 +1580,31 @@ class ModelDeletionTests(unittest.TestCase):
     def test_inventory_reports_incomplete_and_actual_size(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            target = root / "mlx-community" / "Qwen3.5-9B-4bit"
+            target = root / "mlx-community" / "Qwen3.5-27B-5bit"
             target.mkdir(parents=True)
             (target / "partial.safetensors").write_bytes(b"x" * 2048)
             summary = model_management_summary(
                 {
                     "MODEL": "v1.1",
-                    "LLM_MODEL": "qwen3.5-9b-4bit",
+                    "LLM_MODEL": "qwen3.5-27b-5bit",
                 },
                 root,
             )
-            self.assertIn("| incomplete | 2.0 KB | 5.95 GB |", summary)
+            self.assertIn("| incomplete | 2.0 KB | 19.4 GB |", summary)
+            self.assertIn("| Unified memory guidance |", summary)
 
     def test_individual_download_refreshes_inventory(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = {
                 "MODEL": "v1.1",
-                "LLM_MODEL": "qwen3.5-9b-4bit",
+                    "LLM_MODEL": "qwen3.5-27b-5bit",
                 "LLM_GEN": False,
             }
 
             def install(role, key, base_output_dir, force=False):
                 make_model_directory(
-                    Path(base_output_dir) / "mlx-community" / "Qwen3.5-9B-4bit"
+                    Path(base_output_dir) / "mlx-community" / "Qwen3.5-27B-5bit"
                 )
 
             with patch("CYTOLONE.download_models.load_config", return_value=config), patch(
@@ -1276,7 +1614,7 @@ class ModelDeletionTests(unittest.TestCase):
                 side_effect=install,
             ):
                 updates = list(
-                    download_model_with_status("llm", "qwen3.5-9b-4bit")
+                    download_model_with_status("llm", "qwen3.5-27b-5bit")
                 )
 
             self.assertEqual(len(updates), 2)
@@ -1319,6 +1657,20 @@ class ModelManagementWiringTests(unittest.TestCase):
         app = build_app()
         self.assertIs(app.theme, CYTOLONE_THEME)
 
+    def test_blocks_constructor_does_not_emit_gradio_theme_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            app = _cytolone_blocks()
+
+        self.assertIs(app.theme, CYTOLONE_THEME)
+        self.assertFalse(
+            any(
+                "theme" in str(item.message).lower()
+                and "blocks constructor" in str(item.message).lower()
+                for item in caught
+            )
+        )
+
     def test_run_launches_with_cytolone_theme(self):
         app = Mock()
         with patch("CYTOLONE.app.build_app", return_value=app):
@@ -1330,7 +1682,8 @@ class ModelManagementWiringTests(unittest.TestCase):
     def test_management_and_settings_pages_build_with_expected_controls(self):
         with gr.Blocks() as management:
             management_components = build_model_management_page()
-        self.assertEqual(len(management_components), 5)
+        self.assertEqual(len(management_components), 4)
+        shared_confirm = management_components[3]
         change_events = [
             dependency
             for dependency in management.config["dependencies"]
@@ -1340,14 +1693,65 @@ class ModelManagementWiringTests(unittest.TestCase):
         self.assertTrue(all(not event["inputs"] for event in change_events))
         self.assertEqual(
             {event["outputs"][0] for event in change_events},
-            {management_components[3]._id, management_components[4]._id},
+            {shared_confirm._id},
         )
+        confirmation_components = [
+            item
+            for item in management.config["components"]
+            if item["type"] == "checkbox"
+            and item["props"].get("label")
+            == "Confirm deletion of the selected model"
+        ]
+        self.assertEqual(
+            len(confirmation_components),
+            1,
+        )
+        self.assertEqual(confirmation_components[0]["id"], shared_confirm._id)
+        delete_events = [
+            dependency
+            for dependency in management.config["dependencies"]
+            if any(event == "click" for _, event in dependency["targets"])
+            and dependency["outputs"][-1] == shared_confirm._id
+        ]
+        self.assertEqual(len(delete_events), 4)
+        app_delete_event = next(
+            event
+            for event in delete_events
+            if event["inputs"]
+            == [
+                management_components[1]._id,
+                shared_confirm._id,
+                management_components[2]._id,
+            ]
+        )
+        llm_delete_event = next(
+            event
+            for event in delete_events
+            if event["inputs"]
+            == [
+                management_components[2]._id,
+                shared_confirm._id,
+                management_components[1]._id,
+            ]
+        )
+        self.assertIsNotNone(app_delete_event)
+        self.assertIsNotNone(llm_delete_event)
 
         with gr.Blocks():
             settings_components, _, _ = build_settings_page()
         self.assertEqual(len(settings_components), 5)
         labels = {component.label for component in settings_components}
         self.assertNotIn("LLM_GEN", labels)
+        self.assertIn("LLM_MODEL", labels)
+        self.assertEqual(settings_components[2].choices, LLM_MODEL_DISPLAY_CHOICES)
+        self.assertIn(
+            ("Qwen3.5 27B (5-bit)", "qwen3.5-27b-5bit"),
+            settings_components[2].choices,
+        )
+        self.assertIn(
+            ("GPT-OSS 120B (Legacy)", "gpt-oss-120b"),
+            settings_components[2].choices,
+        )
         for hidden_key in (
             "LLM_GEN_THRESHOLD",
             "LLM_MAX_TOKENS",
@@ -1365,22 +1769,40 @@ class ModelManagementWiringTests(unittest.TestCase):
         ):
             download_updates = list(
                 download_model_from_ui(
-                    "application", "v1.1", False, "qwen3.5-9b-4bit"
+                    "application", "v1.1", False, "qwen3.5-27b-5bit"
                 )
             )
         self.assertEqual(download_updates[-1][:2], ("done", "summary after"))
-        self.assertEqual(len(download_updates[-1]), 6)
+        self.assertEqual(len(download_updates[-1]), 5)
 
         with patch(
             "CYTOLONE.app.delete_model_with_status",
             return_value=("deleted", "summary after delete"),
         ) as delete_mock:
             delete_update = delete_model_from_ui(
-                "llm", "qwen3.5-9b-4bit", True, "v1.1"
+            "llm", "qwen3.5-27b-5bit", True, "v1.1"
             )
         self.assertEqual(delete_update[:2], ("deleted", "summary after delete"))
-        self.assertEqual(len(delete_update), 6)
+        self.assertEqual(len(delete_update), 5)
         self.assertTrue(delete_mock.call_args.kwargs["release_callback"])
+
+        with patch(
+            "CYTOLONE.app.delete_model_with_status",
+            return_value=("application deleted", "application summary"),
+        ) as app_delete_mock:
+            delete_application_model_from_ui("v1.1", True, "qwen3.5-27b-5bit")
+        self.assertEqual(
+            app_delete_mock.call_args.args[:3], ("application", "v1.1", True)
+        )
+
+        with patch(
+            "CYTOLONE.app.delete_model_with_status",
+            return_value=("llm deleted", "llm summary"),
+        ) as llm_delete_mock:
+            delete_llm_model_from_ui("qwen3.5-27b-5bit", True, "v1.1")
+        self.assertEqual(
+            llm_delete_mock.call_args.args[:3], ("llm", "qwen3.5-27b-5bit", True)
+        )
 
 
 if __name__ == "__main__":

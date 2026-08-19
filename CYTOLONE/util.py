@@ -1,6 +1,7 @@
 import pandas as pd
 
 from CYTOLONE.default_config.config_manager import read_config
+from CYTOLONE.model import get_llm_spec
 
 def load_config(config_file_path=None):
     parser = read_config(config_file_path)
@@ -21,10 +22,16 @@ def load_config(config_file_path=None):
     }
 
 def build_config_df(config):
+    llm_model_key = config.get("LLM_MODEL", "")
+    try:
+        llm_model_display_name = get_llm_spec(llm_model_key).display_name
+    except ValueError:
+        llm_model_display_name = str(llm_model_key)
+
     rows = [
         {"Section": "Language",     "Item": "Language",          "Value": f"{config['LANGUAGE']}"},
         {"Section": "Model",        "Item": "Model",             "Value": f"{config['MODEL']}"},
-        {"Section": "",             "Item": "LLM Model",         "Value": f"{config['LLM_MODEL']}"},
+        {"Section": "Model",        "Item": "LLM Model",          "Value": llm_model_display_name},
         {"Section": "Device",       "Item": "Webcam Image Size", "Value": f"{config['WEBCAM_IMAGE_SIZE']}"},
     ]
     return pd.DataFrame(rows, columns=["Section", "Item", "Value"])

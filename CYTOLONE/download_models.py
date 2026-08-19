@@ -246,7 +246,7 @@ def model_management_summary(config=None, output_root=None):
     config = load_config() if config is None else config
     output_root = models_path() if output_root is None else Path(output_root)
     rows = [
-        "| Role | Model | Selected | State | Local size | Download | Preliminary memory |",
+        "| Role | Model | Selected | State | Local size | Download | Unified memory guidance |",
         "|---|---|---:|---|---:|---:|---:|",
     ]
     for spec in iter_registered_models():

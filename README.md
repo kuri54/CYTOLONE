@@ -112,36 +112,47 @@ check that the Mac is connected to the internet. If the problem continues,
 quit CYTOLONE and try launching it again later.
 
 ### ⚙️ Settings
-Choose the application model, language, LLM model, LLM on/off setting, and webcam
-image size from **Settings**. LLM generation is disabled by default. Model
-selection is always manual.
+Choose the application model, LLM model, language, and webcam image size from
+**Settings**.
+LLM output is optional. On **CYTOLONE Main**, choose concise or detailed findings
+when the diagnosis result is eligible.
 
-Model choices:
+Choose between:
 
-| Key | Repository | Download size | Preliminary unified-memory recommendation |
-|---|---|---:|---:|
-| `qwen3.5-9b-4bit` (default) | `mlx-community/Qwen3.5-9B-4bit` | 5.95 GB | 16 GB or more |
-| `qwen3.5-9b-8bit` | `mlx-community/Qwen3.5-9B-8bit` | 10.4 GB | 24 GB or more |
-| `qwen3.5-27b-5bit` | `mlx-community/Qwen3.5-27B-5bit` | 19.4 GB | 32 GB or more |
-| `qwen3.5-27b-8bit` | `mlx-community/Qwen3.5-27B-8bit` | 29.5 GB | 48 GB or more |
-| `gpt-oss-120b` (Legacy) | `mlx-community/gpt-oss-120b-MXFP4-Q4` | about 63 GB | 128 GB or more |
+- **Concise differential findings**: generates four morphology-only comparison points and is usually faster.
+- **Detailed differential findings**: generates the same morphology differential plus clinical information to confirm for the differential and potentially useful additional tests, so it usually takes longer.
 
-The sizes and memory figures above are preliminary recommendations, not verified
-minimums. Validate the selected model on the target Mac before enabling LLM
-generation.
+Both modes pass no image to the LLM. They use only the classifier's top two normalized
+diagnosis labels as support information and are not final diagnoses.
 
 `WEBCAM_IMAGE_SIZE` is the **most critical setting** in this app. Please check [this guide](/CYTOLONE/scale_check/README.md) for details.
 
 ### ⬇️ Model Management
 Open **Model Management** from the launcher. The page lists each available
 application model and LLM with its selected state, installation state, local size,
-download-size guidance, and preliminary memory guidance.
+download-size guidance, and unified-memory guidance.
 
-Choose one application model or one LLM, then use its **Download** button. LLM
-generation may remain disabled while preparing an LLM. To remove one model, select
-it, choose **Delete**, and confirm the displayed model. There is no delete-all
-operation. Removing a model does not change Settings; download it again before
-using that model.
+Qwen3.5-27B-5bit is the recommended main model. **Settings** selects the LLM to
+use; **Model Management** handles application/LLM download and deletion.
+
+LLM generation is recommended on a Mac with 64 GB or more unified memory. Below
+64 GB, generation may be slow, cause swap or instability, or the model may not fit.
+
+Available model choices:
+
+| Key | Repository | Download size | Unified-memory guidance |
+|---|---|---:|---:|
+| `qwen3.5-27b-5bit` (recommended main) | `mlx-community/Qwen3.5-27B-5bit` | 19.4 GB | 64 GB or more |
+| `gpt-oss-120b` (Legacy) | `mlx-community/gpt-oss-120b-MXFP4-Q4` | about 63 GB | 128 GB or more |
+| `gpt-oss-20b` (Legacy compatibility) | `mlx-community/gpt-oss-20b-MXFP4-Q8` | 12.1 GB | 64 GB or more |
+
+The sizes and memory figures above are preliminary recommendations, not verified
+minimums. Validate the selected model on the target Mac before generation.
+
+Choose one application model or one LLM, then use its **Download** button. To remove
+one model, select it, choose **Delete**, and confirm the displayed model. There is no
+delete-all operation. Removing a model does not change Settings; download it again
+before using that model.
 
 Downloading a model requires an internet connection. After setup and the models
 you need are ready, CYTOLONE can be used locally and offline.
