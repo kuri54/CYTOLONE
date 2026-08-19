@@ -34,50 +34,26 @@ order = {
     "cervix": ["Full", "Anomaly", "Malignancy", "System", "Diagnosis"]
 }
 
-caption ={
+DIAGNOSIS_CANDIDATE_LABELS = {
+    "cervix": (
+        "Normal Benign NILM Atrophy",
+        "Anomaly Dysplasia LSIL Mild_dysplasia",
+        "Anomaly Dysplasia HSIL Moderate_dysplasia",
+        "Anomaly Dysplasia HSIL Severe_dysplasia",
+        "Anomaly Carcinoma SCC Squamous_cell_carcinoma",
+        "Anomaly Carcinoma ADC Adeno_carcinoma",
+    ),
+}
+
+LLM_DIAGNOSIS_LABELS = {
     "cervix": {
-        "en": {
-            "caption":
-                """
-                [Instruction]
-                Your output must be in English.
-                You are an expert in pathology and cytology.
-                Please concisely describe the differential diagnostic features between {label_top1} and {label_top2} in cervical cytology.
-                If there is any relevant clinical information or additional tests required for the differentiation, please include them.
-
-                Please follow the output format below:
-                [Format]
-                1. Differential diagnostic points in cytology
-                   List up to three concise features
-                2. Relevant clinical information for differentiation
-                3. Additional tests potentially useful for differentiation
-
-                These pieces of information are extremely important for clinicians to determine the next steps. Please ensure they are described based on evidence.
-                For section 3, consider tests that facilitate interdepartmental decision-making and prompt clinical action.
-                """
-        },
-
-        "ja": {
-            "caption":
-                """
-                [指令]
-                出力は必ず**日本語**で行うこと。
-                あなたは病理・細胞診のエキスパートです。
-                子宮頸部の細胞診における{label_top1}と{label_top2}の鑑別所見を簡潔に述べてください。
-                鑑別に必要な臨床情報や検査あれば追記してください。
-
-                出力は以下のフォーマットで出力してください。
-                **フォーマット**
-                1. 細胞診の鑑別ポイント
-                最大3つまでの簡潔な鑑別所見
-                2. 鑑別に有効な臨床情報
-                3. 鑑別に必要と思われる検査
-
-                これらは臨床医が次の処置を行うために非常に重要であるため、エビデンスに基づいて述べるように厳重に注意してください。
-                3. に関しては臨床医が次の行動に移りやすいように他科横断的に考えてください。
-                """
-        },
-     }
+        "Atrophy": "Atrophy",
+        "Mild_dysplasia": "Mild dysplasia",
+        "Moderate_dysplasia": "Moderate dysplasia",
+        "Severe_dysplasia": "Severe dysplasia",
+        "Squamous_cell_carcinoma": "Squamous cell carcinoma",
+        "Adeno_carcinoma": "Adenocarcinoma",
+    }
 }
 
 def get_label_caption(specimen, language):
@@ -86,8 +62,30 @@ def get_label_caption(specimen, language):
 def get_order_type(specimen, language, choice_caption):
     return question_text[specimen][language][choice_caption]
 
-def get_caption(specimen, language, label_top1, label_top2):
-    return caption[specimen][language]["caption"].format(label_top1=label_top1, label_top2=label_top2)
+
+def get_diagnosis_candidate_labels(specimen, labels=None):
+    try:
+        eligible_labels = set(DIAGNOSIS_CANDIDATE_LABELS[specimen])
+    except KeyError as exc:
+        raise ValueError(
+            f"No Diagnosis candidates are defined for specimen={specimen!r}"
+        ) from exc
+
+    labels = classification_label[specimen] if labels is None else labels
+    return [label for label in labels if label in eligible_labels]
 
 
+def get_llm_diagnosis_label(specimen, label):
+    try:
+        diagnosis_labels = LLM_DIAGNOSIS_LABELS[specimen]
+    except KeyError as exc:
+        raise ValueError(
+            f"No LLM diagnosis labels are defined for specimen={specimen!r}"
+        ) from exc
+    try:
+        return diagnosis_labels[label]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown diagnosis label {label!r} for specimen={specimen!r}"
+        ) from exc
 

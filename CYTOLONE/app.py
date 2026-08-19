@@ -1,6 +1,7 @@
 import os
 import re
 import base64
+import gc
 import numpy as np
 import gradio as gr
 from io import BytesIO
@@ -8,28 +9,60 @@ from functools import partial
 from PIL import Image
 
 import torch
-from mlx_lm import load, generate
 from transformers import AutoModel, AutoProcessor
 
 from CYTOLONE.label_caption import (
+    get_diagnosis_candidate_labels,
     get_label_caption,
     get_order_type,
-    get_caption
     )
 
-from CYTOLONE.model import get_model_id, get_llm_id
-from CYTOLONE.download_models import download_models_with_status
+from CYTOLONE.model import (
+    APP_MODEL_DISPLAY_CHOICES,
+    LLM_MODEL_DISPLAY_CHOICES,
+    get_model_id,
+    get_llm_id,
+)
+from CYTOLONE.download_models import (
+    delete_model_with_status,
+    download_model_with_status,
+    model_management_summary,
+)
+from CYTOLONE.llm_prompt import build_concise_prompt_v2, build_prompt_v2
+from CYTOLONE.llm_runtime import LLMRuntimeError, LocalLLMRuntime
+from CYTOLONE.model_storage import model_directory_is_complete
 from CYTOLONE.scale_check.scale_checker import build_scale_checker_page
 from CYTOLONE.settings_page import apply_settings, build_settings_page, get_settings_values
+from CYTOLONE.theme import CYTOLONE_THEME
 
 from CYTOLONE.app_paths import debug_path, models_path
 from CYTOLONE.util import load_config, build_config_df
 
 model_cache = {}
 processor_cache = {}
-llm_model_cache = {}
-llm_tokenizer_cache = {}
+llm_runtime = LocalLLMRuntime()
 TARGET_SIZE = 1024
+
+MANUAL_GENERATION_BUTTON_LABELS = {
+    "ja": "詳細な鑑別所見を生成",
+    "en": "Generate detailed differential findings",
+}
+CONCISE_GENERATION_BUTTON_LABELS = {
+    "ja": "簡潔な鑑別所見を生成",
+    "en": "Generate concise differential findings",
+}
+MANUAL_GENERATION_GUIDANCE = {
+    "ja": "判定が拮抗しています。生成は任意で、時間がかかる場合があります。",
+    "en": "The top two diagnoses are close. Generation is optional and may take some time.",
+}
+
+
+def _cytolone_blocks():
+    """Create the Blocks app; Gradio 6 receives the theme at launch."""
+
+    app = gr.Blocks(title="CYTOLONE")
+    app.theme = CYTOLONE_THEME
+    return app
 
 PAGE_TABS_CSS = """
 #page-tabs > .tab-wrapper > .tab-container[role="tablist"] > button:not([data-tab-id="launcher"]),
@@ -241,6 +274,15 @@ def get_partial_labels(classification_label, order, order_type):
 
         return list(partial_labels)
 
+
+def get_labels_for_order(specimen, classification_label, order, order_type):
+    if order_type == "Diagnosis":
+        # Diagnosis candidates are already full hierarchy strings. Keep the
+        # registry order while excluding only the Full-only Negative leaf.
+        return get_diagnosis_candidate_labels(specimen, classification_label)
+    labels = get_partial_labels(classification_label, order, order_type)
+    return labels
+
 def split_by_three_spaces(predict_label, order_type, order):
     if order_type == "Full":
         return predict_label
@@ -353,29 +395,10 @@ def classify_labels(choice_caption, image, specimen, classification_label, order
         image.save(save_dir / "cropped_image.jpg")
         save_debug_preprocess_info(source, preprocess_info, config)
 
-    model_path = get_model_id(config["MODEL"])
-
-    if model_path not in model_cache:
-        model_dir = models_path() / model_path
-        model = AutoModel.from_pretrained(
-            model_dir,
-            local_files_only=True,
-            device_map="auto")
-
-        processor = AutoProcessor.from_pretrained(
-            model_dir,
-            local_files_only=True
-            )
-
-        model_cache[model_path] = model
-        processor_cache[model_path] = processor
-
-    else:
-        model = model_cache[model_path]
-        processor = processor_cache[model_path]
+    model, processor = load_application_model(config["MODEL"])
 
     order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
-    labels = get_partial_labels(classification_label, order, order_type)
+    labels = get_labels_for_order(specimen, classification_label, order, order_type)
 
     inputs = processor(text=labels, images=image, return_tensors="pt", padding=True)
 
@@ -395,42 +418,200 @@ def classify_labels(choice_caption, image, specimen, classification_label, order
 
     return label_probs
 
-def generate_comments(choice_caption, label_probs, specimen, config):
-    order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
-    top_labels = sorted(label_probs.items(), key=lambda x: x[1], reverse=True)[:2]
-    threshold = config["LLM_GEN_THRESHOLD"]
 
-    if not (top_labels[0][1] < threshold and len(top_labels) > 1 and order_type == "Diagnosis"):
-        return " "
+def load_application_model(model_key):
+    """Load one configured classifier or explain how to restore it."""
+
+    model_id = get_model_id(model_key)
+    model_dir = models_path() / model_id
+    if not model_directory_is_complete(model_dir):
+        raise gr.Error(
+            f"The selected application model ({model_key}) is not installed or is "
+            "incomplete. Open Model Management and download the selected application "
+            "model before analyzing an image."
+        )
+
+    if model_id not in model_cache:
+        try:
+            model_cache[model_id] = AutoModel.from_pretrained(
+                model_dir,
+                local_files_only=True,
+                device_map="auto",
+            )
+            processor_cache[model_id] = AutoProcessor.from_pretrained(
+                model_dir,
+                local_files_only=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            model_cache.pop(model_id, None)
+            processor_cache.pop(model_id, None)
+            raise gr.Error(
+                f"The selected application model ({model_key}) could not be loaded. "
+                "Open Model Management and force re-download that model."
+            ) from exc
+
+    return model_cache[model_id], processor_cache[model_id]
+
+
+def release_model_cache(spec):
+    """Release the selected application or LLM model before deletion."""
+
+    if spec.role == "application":
+        released = model_cache.pop(spec.repo_id, None)
+        released_processor = processor_cache.pop(spec.repo_id, None)
+        if released is not None or released_processor is not None:
+            del released, released_processor
+            gc.collect()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+    elif spec.role == "llm":
+        llm_runtime.release_model(spec.key)
+
+
+def _model_management_control_updates(role, key, other_key):
+    if role == "application":
+        app_key, llm_key = key, other_key
+    else:
+        app_key, llm_key = other_key, key
+    return (
+        gr.update(choices=APP_MODEL_DISPLAY_CHOICES, value=app_key),
+        gr.update(choices=LLM_MODEL_DISPLAY_CHOICES, value=llm_key),
+        gr.update(value=False),
+    )
+
+
+def download_model_from_ui(role, key, force, other_key):
+    for status, summary in download_model_with_status(role, key, force):
+        yield (
+            status,
+            summary,
+            *_model_management_control_updates(role, key, other_key),
+        )
+
+
+def delete_model_from_ui(role, key, confirmation, other_key):
+    status, summary = delete_model_with_status(
+        role,
+        key,
+        confirmation,
+        release_callback=release_model_cache,
+    )
+    return (
+        status,
+        summary,
+        *_model_management_control_updates(role, key, other_key),
+    )
+
+
+def delete_application_model_from_ui(key, confirmation, llm_key):
+    """Keep the application delete event's confirmation input explicit."""
+
+    return delete_model_from_ui("application", key, confirmation, llm_key)
+
+
+def delete_llm_model_from_ui(key, confirmation, app_key):
+    """Keep the LLM delete event's confirmation input explicit."""
+
+    return delete_model_from_ui("llm", key, confirmation, app_key)
+
+
+def reset_delete_confirmation():
+    return gr.update(value=False)
+
+
+def _top_two_label_probs(label_probs):
+    if not isinstance(label_probs, dict):
+        return []
+    return sorted(label_probs.items(), key=lambda item: item[1], reverse=True)[:2]
+
+
+def _manual_generation_available(choice_caption, label_probs, specimen, config):
+    try:
+        order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
+    except (KeyError, TypeError):
+        return False
+
+    top_labels = _top_two_label_probs(label_probs)
+    threshold = config["LLM_GEN_THRESHOLD"]
+    return (
+        len(top_labels) > 1
+        and top_labels[0][1] < threshold
+        and order_type == "Diagnosis"
+    )
+
+
+def _manual_generation_button_update(language, visible=False):
+    return gr.update(
+        value=MANUAL_GENERATION_BUTTON_LABELS[language],
+        visible=visible,
+        interactive=True,
+    )
+
+
+def _concise_generation_button_update(language, visible=False):
+    return gr.update(
+        value=CONCISE_GENERATION_BUTTON_LABELS[language],
+        visible=visible,
+        interactive=True,
+    )
+
+
+def _manual_generation_buttons_update(language, visible=False):
+    return (
+        _concise_generation_button_update(language, visible),
+        _manual_generation_button_update(language, visible),
+    )
+
+
+def reset_analysis_outputs(language=None):
+    if language not in MANUAL_GENERATION_BUTTON_LABELS:
+        language = load_config()["LANGUAGE"]
+
+    return (
+        gr.update(value=None),
+        {},
+        gr.update(value="", visible=False),
+        *_manual_generation_buttons_update(language),
+        gr.update(value=""),
+        gr.update(value=""),
+    )
+
+
+def generate_comments(choice_caption, label_probs, specimen, config, mode="detailed"):
+    if not _manual_generation_available(choice_caption, label_probs, specimen, config):
+        return ""
+    if mode not in {"concise", "detailed"}:
+        raise ValueError(f"Unsupported manual generation mode: {mode}")
+
+    top_labels = _top_two_label_probs(label_probs)
 
     llm_model_path = get_llm_id(config["LLM_MODEL"])
-
-    if llm_model_path not in llm_model_cache:
-        model, tokenizer = load(str(models_path() / llm_model_path))
-
-        llm_model_cache[llm_model_path] = model
-        llm_tokenizer_cache[llm_model_path] = tokenizer
-    else:
-        model = llm_model_cache[llm_model_path]
-        tokenizer = llm_tokenizer_cache[llm_model_path]
-
-    caption = get_caption(specimen, config["LANGUAGE"], top_labels[0][0], top_labels[1][0])
-
-    if hasattr(tokenizer, "apply_chat_template"):
-        messages = [{"role": "user", "content": caption}]
-        prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-    else:
-        prompt = caption
-
-    generated_text = generate(
-        model,
-        tokenizer,
-        prompt=prompt,
-        max_tokens=2000,
-        verbose=False
+    prompt_builder = (
+        build_concise_prompt_v2 if mode == "concise" else build_prompt_v2
     )
+    prompt = prompt_builder(
+        specimen,
+        config["LANGUAGE"],
+        top_labels[0][0],
+        top_labels[1][0],
+    )
+
+    generation_settings = config
+    if mode == "concise":
+        generation_settings = dict(config)
+        generation_settings["LLM_MAX_TOKENS"] = min(
+            int(config.get("LLM_MAX_TOKENS", 512)), 384
+        )
+
+    try:
+        generated_text = llm_runtime.generate(
+            model_key=config["LLM_MODEL"],
+            model_path=models_path() / llm_model_path,
+            messages=prompt.messages,
+            settings=generation_settings,
+        )
+    except LLMRuntimeError as exc:
+        raise gr.Error(str(exc)) from None
 
     return clean_llm_output(generated_text)
 
@@ -453,7 +634,7 @@ def refresh_main_page(specimen="cervix"):
                 mirror=False,
             ),
         ),
-        "",
+        *reset_analysis_outputs(config["LANGUAGE"]),
     )
 
 def select_image_for_analysis(image, captured_image, config):
@@ -468,7 +649,7 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
 
     image, source = select_image_for_analysis(image, captured_image, config)
 
-    return classify_labels(
+    label_probs = classify_labels(
         choice_caption,
         image,
         specimen=specimen,
@@ -477,15 +658,40 @@ def classify_with_current_config(choice_caption, image, captured_image, specimen
         config=config,
         source=source,
     )
+    return label_probs, label_probs
 
-def generate_comments_with_current_config(choice_caption, label_probs, specimen):
+def generate_comments_with_current_config(
+    choice_caption, label_probs, specimen, mode="detailed"
+):
     config, question, _, _ = get_main_context(specimen)
-    if not config["LLM_GEN"]:
-        return ""
     if choice_caption not in question:
         choice_caption = next(iter(question))
 
-    return generate_comments(choice_caption, label_probs, specimen=specimen, config=config)
+    return generate_comments(
+        choice_caption,
+        label_probs,
+        specimen=specimen,
+        config=config,
+        mode=mode,
+    )
+
+
+def show_manual_generation_with_current_config(choice_caption, label_probs, specimen):
+    config, question, _, _ = get_main_context(specimen)
+    if choice_caption not in question:
+        choice_caption = next(iter(question))
+
+    if not _manual_generation_available(choice_caption, label_probs, specimen, config):
+        return (
+            gr.update(value="", visible=False),
+            *_manual_generation_buttons_update(config["LANGUAGE"]),
+        )
+
+    language = config["LANGUAGE"]
+    return (
+        gr.update(value=MANUAL_GENERATION_GUIDANCE[language], visible=True),
+        *_manual_generation_buttons_update(language, visible=True),
+    )
 
 def build_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
@@ -540,62 +746,227 @@ def build_main_page(specimen="cervix"):
     with gr.Row(equal_height=True, variant="panel"):
         with gr.Column(min_width=300):
             label_output = gr.Label(label="Result", show_label=True)
+            label_probs_state = gr.State(value={})
 
         with gr.Column(min_width=400):
+            generation_guidance = gr.Markdown(value="", visible=False)
+            concise_generation_button = gr.Button(
+                CONCISE_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
+                visible=False,
+                interactive=True,
+            )
+            detailed_generation_button = gr.Button(
+                MANUAL_GENERATION_BUTTON_LABELS[config["LANGUAGE"]],
+                visible=False,
+                interactive=True,
+            )
             comment_output = gr.Markdown(
                 label="Comments",
                 elem_classes="comment-box"
             )
 
-    classify_event = submit_btn.click(
+    reset_event = submit_btn.click(
+        fn=reset_analysis_outputs,
+        inputs=None,
+        outputs=[
+            label_output,
+            label_probs_state,
+            generation_guidance,
+            concise_generation_button,
+            detailed_generation_button,
+            comment_output,
+            capture_payload,
+        ],
+    )
+
+    classify_event = reset_event.success(
         fn=partial(classify_with_current_config, specimen=specimen),
         inputs=[
             question_selector,
             image_input,
             capture_payload,
         ],
-        outputs=label_output,
+        outputs=[label_output, label_probs_state],
         js=CAPTURE_CURRENT_VIEW_JS,
         )
 
     classify_event.success(
-        fn=partial(generate_comments_with_current_config, specimen=specimen),
+        fn=partial(show_manual_generation_with_current_config, specimen=specimen),
         inputs=[
             question_selector,
-            label_output
+            label_probs_state,
             ],
-        outputs=comment_output
+        outputs=[
+            generation_guidance,
+            concise_generation_button,
+            detailed_generation_button,
+        ],
         )
 
-    return question_selector, config_table, image_input, capture_payload
-
-def build_model_download_page():
-    gr.Markdown("# Model Download")
-    gr.Markdown("Download models using the current CYTOLONE/config.ini settings.")
-    force_download = gr.Checkbox(label="Force re-download", value=False)
-    download_btn = gr.Button("Download Models", variant="primary")
-    status = gr.Textbox(label="Status", lines=10, interactive=False)
-
-    download_btn.click(
-        fn=download_models_with_status,
-        inputs=force_download,
-        outputs=status,
+    concise_generation_button.click(
+        fn=partial(
+            generate_comments_with_current_config,
+            specimen=specimen,
+            mode="concise",
+        ),
+        inputs=[question_selector, label_probs_state],
+        outputs=comment_output,
     )
 
-def apply_settings_and_refresh_main(language, model, llm_model, llm_gen, llm_threshold, webcam_image_size, debug):
+    detailed_generation_button.click(
+        fn=partial(
+            generate_comments_with_current_config,
+            specimen=specimen,
+            mode="detailed",
+        ),
+        inputs=[question_selector, label_probs_state],
+        outputs=comment_output,
+    )
+
+    for input_component in (question_selector, image_input):
+        input_component.change(
+            fn=reset_analysis_outputs,
+            inputs=None,
+            outputs=[
+                label_output,
+                label_probs_state,
+                generation_guidance,
+                concise_generation_button,
+                detailed_generation_button,
+                comment_output,
+                capture_payload,
+            ],
+        )
+
+    return (
+        question_selector,
+        config_table,
+        image_input,
+        label_output,
+        label_probs_state,
+        generation_guidance,
+        concise_generation_button,
+        detailed_generation_button,
+        comment_output,
+        capture_payload,
+    )
+
+def build_model_management_page():
+    gr.Markdown("# Model Management")
+    gr.Markdown(
+        "Manage one application model or LLM at a time. Downloads and deletions "
+        "are user initiated and independent of manual LLM generation."
+    )
+    summary = gr.Markdown(model_management_summary())
+    status = gr.Textbox(label="Status", lines=10, interactive=False)
+
+    config = load_config()
+    app_model = gr.Dropdown(
+        choices=APP_MODEL_DISPLAY_CHOICES,
+        value=config["MODEL"],
+        label="Application model",
+    )
+    app_force = gr.Checkbox(label="Force re-download application model", value=False)
+    with gr.Row():
+        app_download = gr.Button("Download application model", variant="primary")
+        app_delete = gr.Button("Delete application model")
+    llm_model = gr.Dropdown(
+        choices=LLM_MODEL_DISPLAY_CHOICES,
+        value=config["LLM_MODEL"],
+        label="LLM",
+    )
+    llm_force = gr.Checkbox(label="Force re-download LLM", value=False)
+    with gr.Row():
+        llm_download = gr.Button("Download LLM", variant="primary")
+        llm_delete = gr.Button("Delete LLM")
+    delete_confirm = gr.Checkbox(
+        label="Confirm deletion of the selected model",
+        value=False,
+        interactive=True,
+        elem_id="confirm-delete-selected-model",
+    )
+
+    app_model.change(
+        fn=reset_delete_confirmation,
+        inputs=None,
+        outputs=delete_confirm,
+    )
+    llm_model.change(
+        fn=reset_delete_confirmation,
+        inputs=None,
+        outputs=delete_confirm,
+    )
+
+    app_download.click(
+        fn=partial(download_model_from_ui, "application"),
+        inputs=[app_model, app_force, llm_model],
+        outputs=[
+            status,
+            summary,
+            app_model,
+            llm_model,
+            delete_confirm,
+        ],
+    )
+    llm_download.click(
+        fn=partial(download_model_from_ui, "llm"),
+        inputs=[llm_model, llm_force, app_model],
+        outputs=[
+            status,
+            summary,
+            app_model,
+            llm_model,
+            delete_confirm,
+        ],
+    )
+    app_delete.click(
+        fn=delete_application_model_from_ui,
+        inputs=[app_model, delete_confirm, llm_model],
+        outputs=[
+            status,
+            summary,
+            app_model,
+            llm_model,
+            delete_confirm,
+        ],
+    )
+    llm_delete.click(
+        fn=delete_llm_model_from_ui,
+        inputs=[llm_model, delete_confirm, app_model],
+        outputs=[
+            status,
+            summary,
+            app_model,
+            llm_model,
+            delete_confirm,
+        ],
+    )
+    return summary, app_model, llm_model, delete_confirm
+
+
+def build_model_download_page():
+    """Compatibility name for the former Model Download page."""
+
+    return build_model_management_page()
+
+def apply_settings_and_refresh_main(
+    language,
+    model,
+    llm_model,
+    webcam_image_size,
+    debug,
+):
     settings_outputs = apply_settings(
         language,
         model,
         llm_model,
-        llm_gen,
-        llm_threshold,
         webcam_image_size,
         debug,
     )
     return (*settings_outputs, *refresh_main_page())
 
-def run():
-    with gr.Blocks(title="CYTOLONE") as app:
+def build_app():
+    with _cytolone_blocks() as app:
         gr.HTML(f"<style>{PAGE_TABS_CSS}</style>", container=False, show_label=False)
         with gr.Tabs(selected="launcher", elem_id="page-tabs") as pages:
             with gr.Tab("Launcher", id="launcher"):
@@ -605,7 +976,7 @@ def run():
                     scale_btn = gr.Button("scale-check")
                 with gr.Row():
                     settings_btn = gr.Button("Settings")
-                    model_btn = gr.Button("Model Download")
+                    model_btn = gr.Button("Model Management")
 
             with gr.Tab("CYTOLONE Main", id="main"):
                 back_from_main = gr.Button("Back to Launcher")
@@ -619,9 +990,14 @@ def run():
                 back_from_settings = gr.Button("Back to Launcher")
                 settings_components, settings_apply_btn, settings_status = build_settings_page()
 
-            with gr.Tab("Model Download", id="model"):
+            with gr.Tab("Model Management", id="model"):
                 back_from_model = gr.Button("Back to Launcher")
-                build_model_download_page()
+                (
+                    model_management_summary_output,
+                    app_model_management_choice,
+                    llm_model_management_choice,
+                    model_delete_confirm,
+                ) = build_model_management_page()
 
         def show_launcher():
             return gr.update(selected="launcher")
@@ -635,8 +1011,15 @@ def run():
         def show_settings():
             return (gr.update(selected="settings"), *get_settings_values())
 
-        def show_model_download():
-            return gr.update(selected="model")
+        def show_model_management():
+            config = load_config()
+            return (
+                gr.update(selected="model"),
+                model_management_summary(),
+                gr.update(choices=APP_MODEL_DISPLAY_CHOICES, value=config["MODEL"]),
+                gr.update(choices=LLM_MODEL_DISPLAY_CHOICES, value=config["LLM_MODEL"]),
+                gr.update(value=False),
+            )
 
         main_btn.click(
             fn=show_main,
@@ -653,15 +1036,26 @@ def run():
             inputs=None,
             outputs=[pages, *settings_components],
         )
+        settings_components[0].change(
+            fn=reset_analysis_outputs,
+            inputs=settings_components[0],
+            outputs=main_refresh_targets[3:]
+        )
         settings_apply_btn.click(
             fn=apply_settings_and_refresh_main,
             inputs=settings_components,
             outputs=[*settings_components, settings_status, *main_refresh_targets],
         )
         model_btn.click(
-            fn=show_model_download,
+            fn=show_model_management,
             inputs=None,
-            outputs=pages,
+            outputs=[
+                pages,
+                model_management_summary_output,
+                app_model_management_choice,
+                llm_model_management_choice,
+                model_delete_confirm,
+            ],
         )
 
         for back_btn in [back_from_main, back_from_scale, back_from_settings, back_from_model]:
@@ -671,7 +1065,13 @@ def run():
                 outputs=pages,
             )
 
-    launch_kwargs = {}
+    return app
+
+
+def run():
+    app = build_app()
+
+    launch_kwargs = {"theme": CYTOLONE_THEME}
     if os.environ.get("CYTOLONE_APP_MODE") == "1":
         launch_kwargs.update(
             server_name=os.environ.get("CYTOLONE_SERVER_HOST", "127.0.0.1"),
