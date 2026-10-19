@@ -90,6 +90,14 @@ LLM_MODEL_DISPLAY_CHOICES = [
 ]
 
 APP_MODEL_REGISTRY = {
+    "v2": RegisteredModelSpec(
+        role="application",
+        key="v2",
+        repo_id="kuri54/mlx-CYTOLONE-v2",
+        display_name="CYTOLONE application v2",
+        download_size="not specified",
+        memory_recommendation="not applicable",
+    ),
     "v1.0": RegisteredModelSpec(
         role="application",
         key="v1.0",
@@ -97,6 +105,8 @@ APP_MODEL_REGISTRY = {
         display_name="CYTOLONE application v1.0",
         download_size="not specified",
         memory_recommendation="not applicable",
+        status="deletion only",
+        legacy=True,
     ),
     "v1.1": RegisteredModelSpec(
         role="application",
@@ -105,6 +115,8 @@ APP_MODEL_REGISTRY = {
         display_name="CYTOLONE application v1.1",
         download_size="not specified",
         memory_recommendation="not applicable",
+        status="deletion only",
+        legacy=True,
     ),
 }
 APP_MODEL_CHOICES = list(APP_MODEL_REGISTRY)
@@ -130,6 +142,14 @@ models.update(
 
 def get_model_id(version):
     return APP_MODEL_REGISTRY[version].repo_id
+
+
+def assert_model_download_allowed(repo_id):
+    if any(spec.repo_id == repo_id and spec.legacy for spec in APP_MODEL_REGISTRY.values()):
+        raise ValueError(
+            "CYTOLONE v1.0/v1.1 classification models are deletion-only in this app. "
+            "To use them, run a compatible CYTOLONE 1.1.x app. Use v2 in this app."
+        )
 
 
 def get_llm_spec(llm_model):

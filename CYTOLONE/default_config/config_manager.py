@@ -29,6 +29,8 @@ def _merge_default_settings(config):
             config["SETTINGS"].setdefault(key, value)
     if config["SETTINGS"].get("LLM_MODEL") not in LLM_MODEL_CHOICES:
         config["SETTINGS"]["LLM_MODEL"] = LLM_MODEL_CHOICES[0]
+    # Both specimens use the common v2 classifier, including existing installs.
+    config["SETTINGS"]["MODEL"] = "v2"
     return config
 
 
@@ -86,7 +88,7 @@ def main():
 
     # Updatable Keys
     parser.add_argument("--LANGUAGE", choices=["ja", "en"])
-    parser.add_argument("--MODEL", choices=["v1.0", "v1.1"])
+    parser.add_argument("--MODEL", choices=["v2"])
     parser.add_argument(
         "--LLM_MODEL",
         choices=LLM_MODEL_CHOICES,

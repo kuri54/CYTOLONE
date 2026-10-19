@@ -18,6 +18,7 @@ from CYTOLONE.label_caption import (
     )
 
 from CYTOLONE.model import (
+    assert_model_download_allowed,
     APP_MODEL_DISPLAY_CHOICES,
     LLM_MODEL_DISPLAY_CHOICES,
     get_model_id,
@@ -34,6 +35,7 @@ from CYTOLONE.model_storage import model_directory_is_complete
 from CYTOLONE.scale_check.scale_checker import build_scale_checker_page
 from CYTOLONE.settings_page import apply_settings, build_settings_page, get_settings_values
 from CYTOLONE.theme import CYTOLONE_THEME
+from CYTOLONE.urine_guidance import URINE_GUIDANCE, urine_guidance_html
 
 from CYTOLONE.app_paths import debug_path, models_path
 from CYTOLONE.util import load_config, build_config_df
@@ -73,12 +75,12 @@ PAGE_TABS_CSS = """
 """
 
 CAPTURE_CURRENT_VIEW_JS = """
-(choiceCaption, imageValue, capturePayload) => {
+(choiceCaption, imageValue, capturePayload, specimen, sessionContext) => {
     const root = document.querySelector("#cytolone-image-input");
     const video = root?.querySelector("video");
 
     if (!video || !video.videoWidth || !video.videoHeight) {
-        return [choiceCaption, imageValue, null];
+        return [choiceCaption, imageValue, null, specimen, sessionContext];
     }
 
     const sourceSize = Math.min(video.videoWidth, video.videoHeight);
@@ -101,7 +103,7 @@ CAPTURE_CURRENT_VIEW_JS = """
         sourceSize
     );
 
-    return [choiceCaption, imageValue, canvas.toDataURL("image/png")];
+    return [choiceCaption, imageValue, canvas.toDataURL("image/png"), specimen, sessionContext];
 }
 """
 
@@ -265,12 +267,13 @@ def get_partial_labels(classification_label, order, order_type):
 
     else:
         target_index = order.index(order_type)
-        partial_labels = set()
+        partial_labels = []
 
         for label in classification_label:
-            parts = label.split(" ", 3)
+            parts = label.split()
             partial_label = " ".join(parts[:target_index])
-            partial_labels.add(partial_label)
+            if partial_label not in partial_labels:
+                partial_labels.append(partial_label)
 
         return list(partial_labels)
 
@@ -289,11 +292,7 @@ def split_by_three_spaces(predict_label, order_type, order):
 
     target_index = order.index(order_type) - 1
 
-    parts = predict_label.split(" ", 3)
-
-    if len(parts) < 4:
-        parts += [""] * (4 - len(parts))
-
+    parts = predict_label.split()
     return parts[target_index]
 
 def clean_llm_output(text):
@@ -423,6 +422,7 @@ def load_application_model(model_key):
     """Load one configured classifier or explain how to restore it."""
 
     model_id = get_model_id(model_key)
+    assert_model_download_allowed(model_id)
     model_dir = models_path() / model_id
     if not model_directory_is_complete(model_dir):
         raise gr.Error(
@@ -526,6 +526,8 @@ def _top_two_label_probs(label_probs):
 
 
 def _manual_generation_available(choice_caption, label_probs, specimen, config):
+    if specimen != "cervix":
+        return False
     try:
         order_type = get_order_type(specimen, config["LANGUAGE"], choice_caption)
     except (KeyError, TypeError):
@@ -563,7 +565,7 @@ def _manual_generation_buttons_update(language, visible=False):
     )
 
 
-def reset_analysis_outputs(language=None):
+def reset_analysis_outputs(language=None, specimen="cervix"):
     if language not in MANUAL_GENERATION_BUTTON_LABELS:
         language = load_config()["LANGUAGE"]
 
@@ -572,7 +574,7 @@ def reset_analysis_outputs(language=None):
         {},
         gr.update(value="", visible=False),
         *_manual_generation_buttons_update(language),
-        gr.update(value=""),
+        gr.update(value="", visible=specimen == "cervix"),
         gr.update(value=""),
     )
 
@@ -634,7 +636,11 @@ def refresh_main_page(specimen="cervix"):
                 mirror=False,
             ),
         ),
-        *reset_analysis_outputs(config["LANGUAGE"]),
+        *reset_analysis_outputs(config["LANGUAGE"], specimen),
+        gr.update(choices=specimen_choices(config["LANGUAGE"]), value=specimen,
+                  label="検体" if config["LANGUAGE"] == "ja" else "Specimen"),
+        gr.update(value=URINE_GUIDANCE[config["LANGUAGE"]]["button"], visible=specimen == "urine"),
+        gr.update(value=urine_guidance_html(config["LANGUAGE"]), visible=False),
     )
 
 def select_image_for_analysis(image, captured_image, config):
@@ -693,10 +699,47 @@ def show_manual_generation_with_current_config(choice_caption, label_probs, spec
         *_manual_generation_buttons_update(language, visible=True),
     )
 
+
+def specimen_choices(language):
+    return [("子宮頸部" if language == "ja" else "Cervix", "cervix"),
+            ("尿" if language == "ja" else "Urine", "urine")]
+
+
+def change_specimen(specimen, context):
+    context["revision"] += 1
+    context["specimen"] = specimen
+    return refresh_main_page(specimen)
+
+
+def classify_for_session(choice_caption, image, captured_image, specimen, context):
+    revision = context["revision"]
+    if specimen != context["specimen"]:
+        return (gr.skip(),) * 5
+    _, label_probs = classify_with_current_config(choice_caption, image, captured_image, specimen)
+    guidance = show_manual_generation_with_current_config(choice_caption, label_probs, specimen)
+    if revision != context["revision"] or specimen != context["specimen"]:
+        return (gr.skip(),) * 5
+    return label_probs, label_probs, *guidance
+
+
+def generate_for_session(choice_caption, label_probs, specimen, context, mode):
+    revision = context["revision"]
+    if specimen != "cervix" or specimen != context["specimen"]:
+        return gr.skip()
+    comments = generate_comments_with_current_config(choice_caption, label_probs, specimen, mode)
+    if revision != context["revision"] or specimen != context["specimen"]:
+        return gr.skip()
+    return comments
+
 def build_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
 
     gr.Markdown("# CYTOLONE")
+    specimen_selector = gr.Radio(
+        choices=specimen_choices(config["LANGUAGE"]), value=specimen,
+        label="検体" if config["LANGUAGE"] == "ja" else "Specimen",
+    )
+    analysis_context = gr.State({"specimen": specimen, "revision": 0})
 
     with gr.Row():
         with gr.Column():
@@ -762,12 +805,20 @@ def build_main_page(specimen="cervix"):
             )
             comment_output = gr.Markdown(
                 label="Comments",
-                elem_classes="comment-box"
+                elem_classes="comment-box",
+                visible=specimen == "cervix",
             )
 
+    urine_help_button = gr.Button(URINE_GUIDANCE[config["LANGUAGE"]]["button"], visible=specimen == "urine")
+    urine_help = gr.HTML(value=urine_guidance_html(config["LANGUAGE"]), visible=False)
+    urine_help_button.click(
+        fn=lambda context: gr.update(visible=context["specimen"] == "urine"),
+        inputs=analysis_context, outputs=urine_help, queue=False,
+    )
+
     reset_event = submit_btn.click(
-        fn=reset_analysis_outputs,
-        inputs=None,
+        fn=lambda specimen: reset_analysis_outputs(specimen=specimen),
+        inputs=specimen_selector,
         outputs=[
             label_output,
             label_probs_state,
@@ -780,53 +831,40 @@ def build_main_page(specimen="cervix"):
     )
 
     classify_event = reset_event.success(
-        fn=partial(classify_with_current_config, specimen=specimen),
+        fn=classify_for_session,
         inputs=[
             question_selector,
             image_input,
             capture_payload,
+            specimen_selector,
+            analysis_context,
         ],
-        outputs=[label_output, label_probs_state],
+        outputs=[label_output, label_probs_state, generation_guidance, concise_generation_button, detailed_generation_button],
         js=CAPTURE_CURRENT_VIEW_JS,
         )
 
-    classify_event.success(
-        fn=partial(show_manual_generation_with_current_config, specimen=specimen),
-        inputs=[
-            question_selector,
-            label_probs_state,
-            ],
-        outputs=[
-            generation_guidance,
-            concise_generation_button,
-            detailed_generation_button,
-        ],
-        )
-
-    concise_generation_button.click(
+    concise_event = concise_generation_button.click(
         fn=partial(
-            generate_comments_with_current_config,
-            specimen=specimen,
+            generate_for_session,
             mode="concise",
         ),
-        inputs=[question_selector, label_probs_state],
+        inputs=[question_selector, label_probs_state, specimen_selector, analysis_context],
         outputs=comment_output,
     )
 
-    detailed_generation_button.click(
+    detailed_event = detailed_generation_button.click(
         fn=partial(
-            generate_comments_with_current_config,
-            specimen=specimen,
+            generate_for_session,
             mode="detailed",
         ),
-        inputs=[question_selector, label_probs_state],
+        inputs=[question_selector, label_probs_state, specimen_selector, analysis_context],
         outputs=comment_output,
     )
 
     for input_component in (question_selector, image_input):
         input_component.change(
-            fn=reset_analysis_outputs,
-            inputs=None,
+            fn=lambda specimen: reset_analysis_outputs(specimen=specimen),
+            inputs=specimen_selector,
             outputs=[
                 label_output,
                 label_probs_state,
@@ -838,7 +876,7 @@ def build_main_page(specimen="cervix"):
             ],
         )
 
-    return (
+    refresh_targets = (
         question_selector,
         config_table,
         image_input,
@@ -849,13 +887,28 @@ def build_main_page(specimen="cervix"):
         detailed_generation_button,
         comment_output,
         capture_payload,
+        specimen_selector,
+        urine_help_button,
+        urine_help,
     )
+    specimen_selector.input(
+        fn=change_specimen,
+        inputs=[specimen_selector, analysis_context],
+        outputs=refresh_targets,
+        cancels=[reset_event, classify_event, concise_event, detailed_event],
+        queue=False,
+    )
+    return refresh_targets, analysis_context
 
 def build_model_management_page():
     gr.Markdown("# Model Management")
     gr.Markdown(
         "Manage one application model or LLM at a time. Downloads and deletions "
         "are user initiated and independent of manual LLM generation."
+    )
+    gr.Markdown(
+        "v1.0 / v1.1 分類モデルは削除のみ可能です。利用する場合は対応する CYTOLONE 1.1.x を使用してください。\n\n"
+        "v1.0 / v1.1 classification models can only be deleted here. To use them, run a compatible CYTOLONE 1.1.x app."
     )
     summary = gr.Markdown(model_management_summary())
     status = gr.Textbox(label="Status", lines=10, interactive=False)
@@ -887,9 +940,13 @@ def build_model_management_page():
     )
 
     app_model.change(
-        fn=reset_delete_confirmation,
-        inputs=None,
-        outputs=delete_confirm,
+        fn=lambda key: (
+            reset_delete_confirmation(),
+            gr.update(value=False, interactive=key == "v2"),
+            gr.update(interactive=key == "v2"),
+        ),
+        inputs=app_model,
+        outputs=[delete_confirm, app_force, app_download],
     )
     llm_model.change(
         fn=reset_delete_confirmation,
@@ -955,6 +1012,7 @@ def apply_settings_and_refresh_main(
     llm_model,
     webcam_image_size,
     debug,
+    specimen="cervix",
 ):
     settings_outputs = apply_settings(
         language,
@@ -963,7 +1021,7 @@ def apply_settings_and_refresh_main(
         webcam_image_size,
         debug,
     )
-    return (*settings_outputs, *refresh_main_page())
+    return (*settings_outputs, *refresh_main_page(specimen))
 
 def build_app():
     with _cytolone_blocks() as app:
@@ -980,7 +1038,8 @@ def build_app():
 
             with gr.Tab("CYTOLONE Main", id="main"):
                 back_from_main = gr.Button("Back to Launcher")
-                main_refresh_targets = build_main_page()
+                main_refresh_targets, analysis_context = build_main_page()
+                specimen_selector = main_refresh_targets[10]
 
             with gr.Tab("scale-check", id="scale"):
                 back_from_scale = gr.Button("Back to Launcher")
@@ -1002,8 +1061,8 @@ def build_app():
         def show_launcher():
             return gr.update(selected="launcher")
 
-        def show_main():
-            return (gr.update(selected="main"), *refresh_main_page())
+        def show_main(specimen):
+            return (gr.update(selected="main"), *refresh_main_page(specimen))
 
         def show_scale():
             return gr.update(selected="scale")
@@ -1023,7 +1082,7 @@ def build_app():
 
         main_btn.click(
             fn=show_main,
-            inputs=None,
+            inputs=specimen_selector,
             outputs=[pages, *main_refresh_targets],
         )
         scale_btn.click(
@@ -1038,12 +1097,12 @@ def build_app():
         )
         settings_components[0].change(
             fn=reset_analysis_outputs,
-            inputs=settings_components[0],
-            outputs=main_refresh_targets[3:]
+            inputs=[settings_components[0], specimen_selector],
+            outputs=main_refresh_targets[3:10]
         )
         settings_apply_btn.click(
             fn=apply_settings_and_refresh_main,
-            inputs=settings_components,
+            inputs=[*settings_components, specimen_selector],
             outputs=[*settings_components, settings_status, *main_refresh_targets],
         )
         model_btn.click(

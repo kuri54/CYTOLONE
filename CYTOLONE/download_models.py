@@ -8,6 +8,7 @@ from huggingface_hub import snapshot_download
 
 from CYTOLONE.app_paths import models_path
 from CYTOLONE.model import (
+    assert_model_download_allowed,
     get_llm_id,
     get_model_id,
     get_registered_model,
@@ -136,6 +137,7 @@ def _promote_staging(staging_dir, destination):
 def download_and_flatten(model_id: str, base_output_dir: Path, force=False):
     """Download one snapshot directly into a validated staging directory."""
 
+    assert_model_download_allowed(model_id)
     base_output_dir = Path(base_output_dir)
     root, destination = _safe_target(model_id, base_output_dir)
     _assert_safe_target(root, destination)
@@ -177,6 +179,7 @@ def model_is_installed(model_id: str, base_output_dir: Path):
 
 
 def download_registered_model(role, key, base_output_dir=None, force=False):
+    assert_model_download_allowed(get_registered_model(role, key).repo_id)
     spec, root, target = _registered_target(role, key, base_output_dir)
     _assert_safe_target(root, target)
     download_and_flatten(spec.repo_id, root, force=force)
@@ -233,6 +236,7 @@ def download_models(config=None, output_root=None, force=False):
         ("application", config["MODEL"]),
         ("llm", config["LLM_MODEL"]),
     ):
+        assert_model_download_allowed(get_registered_model(role, key).repo_id)
         spec, _, target = _registered_target(role, key, output_root)
         if not force and _model_state(target, output_root.resolve(strict=False)) == "installed":
             continue
@@ -259,7 +263,8 @@ def model_management_summary(config=None, output_root=None):
         rows.append(
             f"| {spec.role} | {spec.display_name} (`{spec.key}`) | "
             f"{'yes' if selected else 'no'} | {_model_state(target, root)} | "
-            f"{_format_size(_directory_size(target, root))} | {spec.download_size} | "
+            f"{_format_size(_directory_size(target, root))} | "
+            f"{'Deletion only (CYTOLONE 1.1.x required for use)' if spec.status == 'deletion only' else spec.download_size} | "
             f"{spec.memory_recommendation} |"
         )
     return "### Model Management\n\n" + "\n".join(rows)
@@ -279,6 +284,11 @@ def download_model_with_status(role, key, force=False):
     config = load_config()
     output_root = models_path()
     spec, _, target = _registered_target(role, key, output_root)
+    try:
+        assert_model_download_allowed(spec.repo_id)
+    except ValueError as exc:
+        yield _download_status(str(exc), config, output_root)
+        return
     yield _download_status(
         f"Preparing {spec.display_name}...",
         config,
@@ -349,6 +359,7 @@ def download_models_with_status(force=False):
     skipped = []
     try:
         for model_id in targets:
+            assert_model_download_allowed(model_id)
             if not force and model_is_installed(model_id, output_root):
                 skipped.append(model_id)
                 yield _download_status(

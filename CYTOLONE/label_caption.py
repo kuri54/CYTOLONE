@@ -15,10 +15,29 @@ question_text = {
             "この画像のベセスダ分類は?": "System",
             "この画像の診断は?": "Diagnosis"
             },
-    }
-    }
+    },
+    "urine": {
+        "en": {
+            "What do you think of this image?": "Full",
+            "Is this image anomaly or normal?": "Anomaly",
+            "Is this image benign or malignant?": "Malignancy",
+            "What is the diagnosis for this image?": "Diagnosis",
+        },
+        "ja": {
+            "この画像はどう思う?": "Full",
+            "この画像は正常？異常?": "Anomaly",
+            "この画像は良性？悪性?": "Malignancy",
+            "この画像の診断は?": "Diagnosis",
+        },
+    },
+}
 
 classification_label = {
+    "urine": [
+        "Normal Benign Negative",
+        "Normal Benign Reactive_change",
+        "Anomaly Malignant Urothelial_carcinoma",
+    ],
     "cervix": [
         "Normal Benign NILM Negative",
         "Normal Benign NILM Atrophy",
@@ -31,10 +50,15 @@ classification_label = {
         }
 
 order = {
+    "urine": ["Full", "Anomaly", "Malignancy", "Diagnosis"],
     "cervix": ["Full", "Anomaly", "Malignancy", "System", "Diagnosis"]
 }
 
 DIAGNOSIS_CANDIDATE_LABELS = {
+    "urine": (
+        "Normal Benign Reactive_change",
+        "Anomaly Malignant Urothelial_carcinoma",
+    ),
     "cervix": (
         "Normal Benign NILM Atrophy",
         "Anomaly Dysplasia LSIL Mild_dysplasia",

@@ -24,15 +24,17 @@ class AppPathTests(unittest.TestCase):
                 self.assertEqual(debug_path(), data_root / "Debug")
 
     def test_config_manager_uses_app_data_root_without_changing_default_file(self):
+        local_config = Path("CYTOLONE") / "config.ini"
+        before = local_config.read_bytes() if local_config.exists() else None
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary) / "Data"
             with patch.dict(os.environ, {"CYTOLONE_DATA_ROOT": str(data_root)}):
                 config = read_config()
-                self.assertEqual(config["SETTINGS"]["MODEL"], "v1.1")
+                self.assertEqual(config["SETTINGS"]["MODEL"], "v2")
                 config["SETTINGS"]["MODEL"] = "v1.0"
                 write_config(config)
-                self.assertEqual(read_config()["SETTINGS"]["MODEL"], "v1.0")
-                self.assertFalse((Path("CYTOLONE") / "config.ini").exists())
+                self.assertEqual(read_config()["SETTINGS"]["MODEL"], "v2")
+                self.assertEqual(local_config.read_bytes() if local_config.exists() else None, before)
 
 
 if __name__ == "__main__":
