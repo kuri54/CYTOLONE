@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -26,6 +27,7 @@ from CYTOLONE.app import (
     delete_llm_model_from_ui,
     download_model_from_ui,
     generate_comments,
+    get_app_version,
     get_labels_for_order,
     load_application_model,
     MANUAL_GENERATION_BUTTON_LABELS,
@@ -81,6 +83,39 @@ from CYTOLONE.theme import (
     CYTOLONE_THEME,
 )
 from CYTOLONE.util import build_config_df
+
+
+class AppVersionTests(unittest.TestCase):
+    def test_app_mode_uses_selected_runtime_build_version(self):
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": "2.0.0-rc2"}):
+            self.assertEqual(get_app_version(), "2.0.0-rc2")
+
+    def test_cli_uses_source_project_version_not_inherited_build_version(self):
+        import tomllib
+
+        with (Path(__file__).resolve().parent.parent / "pyproject.toml").open("rb") as source:
+            expected = tomllib.load(source)["project"]["version"]
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "0", "CYTOLONE_APP_VERSION": "old-build"}):
+            self.assertEqual(get_app_version(), expected)
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": ""}):
+            self.assertEqual(get_app_version(), expected)
+
+    def test_installed_package_without_project_file_uses_metadata(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("CYTOLONE.app.Path.is_file", return_value=False), \
+                patch("CYTOLONE.app.version", return_value="2.0.0"):
+            self.assertEqual(get_app_version(), "2.0.0")
+
+    def test_both_page_titles_include_build_version(self):
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": "2.0.0-rc2"}):
+            app = build_app()
+        headings = [
+            component["props"].get("value")
+            for component in app.get_config_file()["components"]
+            if component["type"] == "markdown"
+        ]
+        self.assertIn('# CYTOLONE Launcher <span class="app-version">v2.0.0-rc2</span>', headings)
+        self.assertIn('# CYTOLONE <span class="app-version">v2.0.0-rc2</span>', headings)
 
 
 def make_model_directory(directory):

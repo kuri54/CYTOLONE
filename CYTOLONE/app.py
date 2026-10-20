@@ -2,10 +2,14 @@ import os
 import re
 import base64
 import gc
+import tomllib
 import numpy as np
 import gradio as gr
+from html import escape
+from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from functools import partial
+from pathlib import Path
 from PIL import Image
 
 import torch
@@ -59,6 +63,21 @@ MANUAL_GENERATION_GUIDANCE = {
 }
 
 
+def get_app_version():
+    if os.environ.get("CYTOLONE_APP_MODE") == "1":
+        build_version = os.environ.get("CYTOLONE_APP_VERSION", "").strip()
+        if build_version:
+            return build_version
+    project_file = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if project_file.is_file():
+        with project_file.open("rb") as source:
+            return tomllib.load(source)["project"]["version"]
+    try:
+        return version("CYTOLONE")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def _cytolone_blocks():
     """Create the Blocks app; Gradio 6 receives the theme at launch."""
 
@@ -67,6 +86,11 @@ def _cytolone_blocks():
     return app
 
 PAGE_TABS_CSS = """
+.app-version {
+    font-size: 0.5em;
+    font-weight: normal;
+    opacity: 0.65;
+}
 #page-tabs > .tab-wrapper > .tab-container[role="tablist"] > button:not([data-tab-id="launcher"]),
 #page-tabs > .tab-wrapper > .tab-container.visually-hidden > button:not(:first-child),
 #page-tabs > .tab-wrapper > .overflow-menu {
@@ -734,7 +758,7 @@ def generate_for_session(choice_caption, label_probs, specimen, context, mode):
 def build_main_page(specimen="cervix"):
     config, question, _, _ = get_main_context(specimen)
 
-    gr.Markdown("# CYTOLONE")
+    gr.Markdown(f'# CYTOLONE <span class="app-version">v{escape(get_app_version())}</span>')
     specimen_selector = gr.Radio(
         choices=specimen_choices(config["LANGUAGE"]), value=specimen,
         label="検体" if config["LANGUAGE"] == "ja" else "Specimen",
@@ -1028,7 +1052,7 @@ def build_app():
         gr.HTML(f"<style>{PAGE_TABS_CSS}</style>", container=False, show_label=False)
         with gr.Tabs(selected="launcher", elem_id="page-tabs") as pages:
             with gr.Tab("Launcher", id="launcher"):
-                gr.Markdown("# CYTOLONE Launcher")
+                gr.Markdown(f'# CYTOLONE Launcher <span class="app-version">v{escape(get_app_version())}</span>')
                 with gr.Row():
                     main_btn = gr.Button("CYTOLONE Main", variant="primary")
                     scale_btn = gr.Button("scale-check")
