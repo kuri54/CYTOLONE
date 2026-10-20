@@ -12,19 +12,21 @@ _**"Always by you side."**_
 |[日本語](./README_JA.md)|
 
 ## ✨ Overview
-**CYTOLONE** (Cytology All-in-One) is a real-time AI-powered support tool for **cytotechnologists in cervical cytology**.
+**CYTOLONE** (Cytology All-in-One) is a real-time AI-powered support tool for **cytotechnologists in cervical and urinary cytology**.
 Unlike conventional AI systems that require **whole slide imaging (WSI)**, CYTOLONE operates **without WSI**, enabling **low-cost and high-speed AI support** using just an iPhone and an Apple Silicon Mac.
 
 Key Features:
-- **Real-time support**: Provides results in less than 0.5 seconds
+- **Real-time microscope interface**: Analyze the current camera view
 - **WSI-free, low-cost operation**: No expensive scanners or GPUs required
-- **High-accuracy classification using hierarchical labeling**: Covers Anomaly, Malignancy, Bethesda, and Diagnosis categories
-- **Optional local LLM-based supporting information**
+- **Specimen-specific hierarchical classification**: Select Cervix or Urine; both use the same v2 classification model
+- **Optional local LLM-based supporting information for cervical cytology**
+- **Fixed review flow for uncertain urinary cytology interpretations**
 
-For more details, see the published paper:
-[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
+For more details, see the published papers:
 
-Below is an example image used in the study:
+- [Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
+- [A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels (Cytopathology 2026)](https://doi.org/10.1111/cyt.70140)
+
 <div align="center">
   <img src="/assets/sample_study_image.png" alt="Example Study Image" width="60%">
 </div>
@@ -35,9 +37,13 @@ Below is an example image used in the study:
   <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="100%">
 </div>
 
+<br>
+
 ## 💡 Usage
 - This library is optimized **only** for Apple Silicon Macs and iPhones.
 - It does **not support Windows or other operating systems**, and other camera devices are untested.
+
+<br>
 
 ### 💻 Physical Setup
 1. Prepare an Apple Silicon Mac and iPhone, and log in with the **same Apple ID**.
@@ -50,6 +56,8 @@ Below is an example image used in the study:
 <div align="center">
   <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
+
+<br>
 
 ### 📦 Install the macOS App
 For general use, download the Apple Silicon DMG from GitHub Releases:
@@ -76,6 +84,8 @@ GitHub Releases page:
 This approval is required only for the first launch. See
 [Apple's instructions for opening an app from an unknown developer](https://support.apple.com/en-us/guide/mac-help/-mh40616/mac).
 
+<br>
+
 ### 🚀 First Launch and Later Launches
 On first launch, CYTOLONE shows a simple English native setup window. It
 prepares the required local environment, then opens the CYTOLONE interface in
@@ -90,8 +100,21 @@ used offline.
 The CYTOLONE launcher opens first. From the launcher, you can open CYTOLONE
 Main, scale-check, Settings, and Model Management. Only the Launcher tab is shown
 in the navigation bar; use the launcher buttons to open each page. Click
-**CYTOLONE Main** to open the existing analysis screen, then select your camera
-and click **Analyze** to evaluate the current view.
+**CYTOLONE Main** to open the analysis screen, select **Cervix** or **Urine** using
+the radio buttons, then select your camera and click **Analyze** to evaluate the current view.
+
+<br>
+
+### 🔬 Specimen and Classification Categories
+The same v2 classification model is used for both specimens, with different hierarchical labels:
+
+- **Cervix** (default): Full, Anomaly, Malignancy, System (Bethesda), and Diagnosis.
+- **Urine**: Full, Anomaly, Malignancy, and Diagnosis. There is no System category.
+
+For urine, LLM generation is disabled. **When the interpretation is uncertain** opens
+a fixed review flow with references.
+
+<br>
 
 ### 🔄 Update, Quit, and Removal
 To update CYTOLONE, download the newer DMG and replace the existing
@@ -111,11 +134,13 @@ If setup cannot be completed, choose **Retry Setup** in the native window and
 check that the Mac is connected to the internet. If the problem continues,
 quit CYTOLONE and try launching it again later.
 
+<br>
+
 ### ⚙️ Settings
-Choose the application model, LLM model, language, and webcam image size from
-**Settings**.
-LLM output is optional. On **CYTOLONE Main**, choose concise or detailed findings
-when the diagnosis result is eligible.
+**Settings** uses v2 as the application model and lets you choose the LLM model,
+language, and webcam image size.
+LLM output is optional and available only for **Cervix**. On **CYTOLONE Main**, choose
+concise or detailed findings when the diagnosis result is eligible.
 
 Choose between:
 
@@ -127,18 +152,25 @@ diagnosis labels as support information and are not final diagnoses.
 
 `WEBCAM_IMAGE_SIZE` is the **most critical setting** in this app. Please check [this guide](/CYTOLONE/scale_check/README.md) for details.
 
+<br>
+
 ### ⬇️ Model Management
 Open **Model Management** from the launcher. The page lists each available
 application model and LLM with its selected state, installation state, local size,
 download-size guidance, and unified-memory guidance.
 
-Qwen3.5-27B-5bit is the recommended main model. **Settings** selects the LLM to
+The classification model for both specimens is `v2` (`kuri54/mlx-CYTOLONE-v2`).
+In CYTOLONE v2, existing v1.0 / v1.1 classification models can only be deleted:
+they cannot be used, newly downloaded, or re-downloaded. To use those older models,
+run a compatible **CYTOLONE 1.1.x app**. This restriction does not apply to the legacy LLM choices below.
+
+Qwen3.5-27B-5bit is the recommended LLM. **Settings** selects the LLM to
 use; **Model Management** handles application/LLM download and deletion.
 
 LLM generation is recommended on a Mac with 64 GB or more unified memory. Below
 64 GB, generation may be slow, cause swap or instability, or the model may not fit.
 
-Available model choices:
+Available LLM choices:
 
 | Key | Repository | Download size | Unified-memory guidance |
 |---|---|---:|---:|
@@ -149,13 +181,15 @@ Available model choices:
 The sizes and memory figures above are preliminary recommendations, not verified
 minimums. Validate the selected model on the target Mac before generation.
 
-Choose one application model or one LLM, then use its **Download** button. To remove
+Choose the v2 application model or one LLM, then use its **Download** button. To remove
 one model, select it, choose **Delete**, and confirm the displayed model. There is no
-delete-all operation. Removing a model does not change Settings; download it again
-before using that model.
+delete-all operation. Removing a model does not change Settings; re-download v2 or
+the selected LLM before using it again. Older classification models cannot be re-downloaded in this app.
 
 Downloading a model requires an internet connection. After setup and the models
 you need are ready, CYTOLONE can be used locally and offline.
+
+<br>
 
 ### 🌐 Network and Offline Use
 Downloading the DMG, preparing the app environment, and downloading models require
@@ -185,17 +219,11 @@ Click the red button to connect to your iPhone.
 > Make sure to use the x10 objective lens when taking photos.
 > Other magnifications are not supported.
 
-## 🔭 Planned Features
-The following features are planned for future updates:
-
-- **Region-of-Interest Highlighting with Red Circles**
-  Users will be able to place a red circle on any part of the image to prompt the model to focus on that specific area during evaluation.
-  _Reference_: [What does CLIP know about a red circle? Visual prompt engineering for VLMs](https://arxiv.org/pdf/2304.06712)
-
-- **Screening Mode**
-  When enabled, this mode will continuously evaluate the "Anomaly" category in real time during microscopic observation.
+<br>
 
 ## 🎉 Citation
+The original cervical cytology work is described in the following paper:
+
 ```
 @article{kurita2025cytolone,
          title={Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology},
@@ -203,5 +231,19 @@ The following features are planned for future updates:
          year={2025},
          journal={Modern Pathology},
          doi={10.1016/j.modpat.2025.100817}
+}
+```
+
+The v2 work covers cervical and urinary cytology: [A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels](https://doi.org/10.1111/cyt.70140).
+Published online in *Cytopathology* on October 20, 2026.
+
+```
+@article{kurita_cytolone_v2,
+         title={A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels},
+         author={Kurita, Yuki and Meguro, Shiori and Enomoto, Yasunori and Kawasaki, Hideya and Saitoh, Takeji and Suzuki, Makoto and Sakane, Junichi and Suzuki, Daisuke and Ishidou, Osamu and Shinmura, Kazuya and Iwashita, Toshihide},
+         year={2026},
+         journal={Cytopathology},
+         doi={10.1111/cyt.70140},
+         note={First published online October 20, 2026}
 }
 ```

@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -13,6 +14,10 @@ import gradio as gr
 from CYTOLONE.app import (
     _cytolone_blocks,
     build_app,
+    change_specimen,
+    classify_for_session,
+    generate_for_session,
+    split_by_three_spaces,
     build_model_management_page,
     build_settings_page,
     CONCISE_GENERATION_BUTTON_LABELS,
@@ -22,6 +27,7 @@ from CYTOLONE.app import (
     delete_llm_model_from_ui,
     download_model_from_ui,
     generate_comments,
+    get_app_version,
     get_labels_for_order,
     load_application_model,
     MANUAL_GENERATION_BUTTON_LABELS,
@@ -37,6 +43,7 @@ from CYTOLONE.download_models import (
     delete_registered_model,
     download_and_flatten,
     download_model_with_status,
+    download_registered_model,
     download_models,
     download_models_with_status,
     get_download_targets,
@@ -76,6 +83,39 @@ from CYTOLONE.theme import (
     CYTOLONE_THEME,
 )
 from CYTOLONE.util import build_config_df
+
+
+class AppVersionTests(unittest.TestCase):
+    def test_app_mode_uses_selected_runtime_build_version(self):
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": "2.0.0-rc2"}):
+            self.assertEqual(get_app_version(), "2.0.0-rc2")
+
+    def test_cli_uses_source_project_version_not_inherited_build_version(self):
+        import tomllib
+
+        with (Path(__file__).resolve().parent.parent / "pyproject.toml").open("rb") as source:
+            expected = tomllib.load(source)["project"]["version"]
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "0", "CYTOLONE_APP_VERSION": "old-build"}):
+            self.assertEqual(get_app_version(), expected)
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": ""}):
+            self.assertEqual(get_app_version(), expected)
+
+    def test_installed_package_without_project_file_uses_metadata(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("CYTOLONE.app.Path.is_file", return_value=False), \
+                patch("CYTOLONE.app.version", return_value="2.0.0"):
+            self.assertEqual(get_app_version(), "2.0.0")
+
+    def test_both_page_titles_include_build_version(self):
+        with patch.dict(os.environ, {"CYTOLONE_APP_MODE": "1", "CYTOLONE_APP_VERSION": "2.0.0-rc2"}):
+            app = build_app()
+        headings = [
+            component["props"].get("value")
+            for component in app.get_config_file()["components"]
+            if component["type"] == "markdown"
+        ]
+        self.assertIn('# CYTOLONE Launcher <span class="app-version">v2.0.0-rc2</span>', headings)
+        self.assertIn('# CYTOLONE <span class="app-version">v2.0.0-rc2</span>', headings)
 
 
 def make_model_directory(directory):
@@ -353,6 +393,19 @@ class PromptV2Tests(unittest.TestCase):
 
 
 class ClassificationLabelTests(unittest.TestCase):
+    def test_urine_candidates_and_leaf_labels(self):
+        question, labels, order = get_label_caption("urine", "en")
+        self.assertEqual(list(question.values()), ["Full", "Anomaly", "Malignancy", "Diagnosis"])
+        expected = {
+            "Full": ["Normal Benign Negative", "Normal Benign Reactive_change", "Anomaly Malignant Urothelial_carcinoma"],
+            "Anomaly": ["Normal", "Anomaly"],
+            "Malignancy": ["Normal Benign", "Anomaly Malignant"],
+            "Diagnosis": ["Normal Benign Reactive_change", "Anomaly Malignant Urothelial_carcinoma"],
+        }
+        for category, candidates in expected.items():
+            self.assertEqual(get_labels_for_order("urine", labels, order, category), candidates)
+        self.assertEqual(split_by_three_spaces(labels[-1], "Diagnosis", order), "Urothelial_carcinoma")
+
     def test_classifier_results_remain_english_for_both_languages(self):
         _, english_labels, _ = get_label_caption("cervix", "en")
         _, japanese_labels, _ = get_label_caption("cervix", "ja")
@@ -506,7 +559,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
 
             self.assertEqual(settings["LLM_MODEL"], "qwen3.5-27b-5bit")
             self.assertEqual(settings["LANGUAGE"], "ja")
-            self.assertEqual(settings["MODEL"], "v1.0")
+            self.assertEqual(settings["MODEL"], "v2")
             self.assertEqual(settings["LLM_GEN_THRESHOLD"], "0.4")
             self.assertEqual(settings["WEBCAM_IMAGE_SIZE"], "900")
             self.assertEqual(settings["DEBUG"], "True")
@@ -543,7 +596,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
     def test_valid_settings_bounds_are_explicit(self):
         values = validate_settings(
             "en",
-            "v1.1",
+            "v2",
             "qwen3.5-27b-5bit",
             1024,
             False,
@@ -565,7 +618,7 @@ class SettingsCompatibilityTests(unittest.TestCase):
                 write_config(config)
 
                 result = apply_settings(
-                    "ja", "v1.0", "qwen3.5-27b-5bit", 900, True
+                    "ja", "v2", "qwen3.5-27b-5bit", 900, True
                 )
                 after = read_config()["SETTINGS"]
 
@@ -586,12 +639,12 @@ class SettingsCompatibilityTests(unittest.TestCase):
             config["SETTINGS"]["LLM_MODEL"] = "qwen3.5-27b-5bit"
             write_config(config)
             result = apply_settings_and_refresh_main(
-                "ja", "v1.0", "qwen3.5-27b-5bit", 900, True
+                "ja", "v2", "qwen3.5-27b-5bit", 900, True
             )
             after = read_config()["SETTINGS"]
 
         self.assertEqual(after["LLM_MODEL"], "qwen3.5-27b-5bit")
-        self.assertEqual(len(result), 16)
+        self.assertEqual(len(result), 19)
         summary = result[7]
         llm_row = next(
             row for row in summary.to_dict("records") if row["Item"] == "LLM Model"
@@ -713,6 +766,30 @@ class SettingsCompatibilityTests(unittest.TestCase):
 
 
 class ManualGenerationUXTests(unittest.TestCase):
+    def test_urine_never_calls_llm(self):
+        with patch("CYTOLONE.app.llm_runtime.generate") as generate:
+            self.assertEqual(generate_comments(self.QUESTION, {"Reactive_change": 0.51, "Urothelial_carcinoma": 0.49}, "urine", self._config()), "")
+        generate.assert_not_called()
+
+    def test_specimen_change_suppresses_inflight_results_and_comments(self):
+        context = {"specimen": "cervix", "revision": 0}
+
+        def classify(*args):
+            change_specimen("urine", context)
+            return {}, {"Atrophy": 0.5, "Mild_dysplasia": 0.5}
+
+        with patch("CYTOLONE.app.classify_with_current_config", side_effect=classify):
+            result = classify_for_session(self.QUESTION, None, None, "cervix", context)
+        self.assertEqual(result, (gr.skip(),) * 5)
+        context["specimen"] = "cervix"
+
+        def generate(*args):
+            change_specimen("urine", context)
+            return "old cervix comment"
+
+        with patch("CYTOLONE.app.generate_comments_with_current_config", side_effect=generate):
+            self.assertEqual(generate_for_session(self.QUESTION, {}, "cervix", context, "detailed"), gr.skip())
+
     QUESTION = "What is the diagnosis for this image?"
     QUESTION_MAP = {QUESTION: "Diagnosis"}
     ORDER = ["Full", "Anomaly", "Malignancy", "System", "Diagnosis"]
@@ -874,8 +951,10 @@ class ManualGenerationUXTests(unittest.TestCase):
             lambda item: item["props"].get("label") == "Result"
         )
         label_probs_state_id = component_id(
-            lambda item: item["type"] == "state"
+            lambda item: item["type"] == "state" and app.blocks[item["id"]].value == {}
         )
+        specimen_id = component_id(lambda item: item["type"] == "radio")
+        context_id = component_id(lambda item: item["type"] == "state" and app.blocks[item["id"]].value.get("specimen") == "cervix")
         guidance_id = component_id(
             lambda item: item["type"] == "markdown"
             and item["props"].get("visible") is False
@@ -925,27 +1004,18 @@ class ManualGenerationUXTests(unittest.TestCase):
         classify_events = [
             dependency
             for dependency in dependencies
-            if dependency["inputs"] == [question_id, image_id, capture_id]
-            and dependency["outputs"] == [label_id, label_probs_state_id]
+            if dependency["inputs"] == [question_id, image_id, capture_id, specimen_id, context_id]
+            and dependency["outputs"] == [label_id, label_probs_state_id, guidance_id, concise_button_id, detailed_button_id]
         ]
         self.assertEqual(len(classify_events), 1)
         self.assertIn("canvas", classify_events[0]["js"])
-
-        condition_events = [
-            dependency
-            for dependency in dependencies
-            if dependency["inputs"] == [question_id, label_probs_state_id]
-            and dependency["outputs"]
-            == [guidance_id, concise_button_id, detailed_button_id]
-        ]
-        self.assertEqual(len(condition_events), 1)
 
         manual_events = [
             dependency
             for dependency in dependencies
             if dependency["targets"]
             in [[(concise_button_id, "click")], [(detailed_button_id, "click")]]
-            and dependency["inputs"] == [question_id, label_probs_state_id]
+            and dependency["inputs"] == [question_id, label_probs_state_id, specimen_id, context_id]
             and dependency["outputs"] == [comment_id]
         ]
         self.assertEqual(len(manual_events), 2)
@@ -956,7 +1026,7 @@ class ManualGenerationUXTests(unittest.TestCase):
                     dependency
                     for dependency in reset_events
                     if dependency["targets"] == [(language_id, "change")]
-                    and dependency["inputs"] == [language_id]
+                    and dependency["inputs"] == [language_id, specimen_id]
                 ]
             ),
             1,
@@ -969,7 +1039,7 @@ class RuntimeAdapterTests(unittest.TestCase):
             "CYTOLONE.app.models_path", return_value=Path(temporary)
         ):
             with self.assertRaises(gr.Error) as context:
-                load_application_model("v1.1")
+                load_application_model("v2")
         self.assertIn("Model Management", str(context.exception))
         self.assertIn("application model", str(context.exception))
 
@@ -1309,9 +1379,45 @@ class RuntimeAdapterTests(unittest.TestCase):
 
 
 class DownloadIntegrityTests(unittest.TestCase):
+    def test_v2_and_all_llms_remain_downloadable(self):
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "CYTOLONE.download_models.download_and_flatten"
+        ) as download:
+            for role, key in [("application", "v2"), *[("llm", key) for key in LLM_MODEL_CHOICES]]:
+                for force in (False, True):
+                    download_registered_model(role, key, Path(temporary), force=force)
+                    self.assertEqual(download.call_args.kwargs["force"], force)
+            self.assertEqual(download.call_count, 8)
+
+    def test_legacy_application_downloads_and_loads_are_rejected_before_io(self):
+        for key in ("v1.0", "v1.1"):
+            repo_id = "kuri54/mlx-CYTOLONE-" + ("v1" if key == "v1.0" else key)
+            config = {"MODEL": key, "LLM_MODEL": "qwen3.5-27b-5bit"}
+            with patch("CYTOLONE.download_models.snapshot_download") as network, patch(
+                "CYTOLONE.download_models.tempfile.mkdtemp"
+            ) as staging, patch("CYTOLONE.download_models.load_config", return_value=config), patch(
+                "CYTOLONE.download_models.model_directory_is_complete", return_value=True
+            ):
+                for force in (False, True):
+                    with self.assertRaisesRegex(ValueError, "deletion-only"):
+                        download_and_flatten(repo_id, Path("mlx_models"), force=force)
+                    with self.assertRaisesRegex(ValueError, "deletion-only"):
+                        download_registered_model("application", key, force=force)
+                    with self.assertRaisesRegex(ValueError, "deletion-only"):
+                        download_models(config, force=force)
+                    self.assertIn("deletion-only", list(download_model_with_status("application", key, force=force))[-1][0])
+                    self.assertIn("deletion-only", list(download_models_with_status(force=force))[-1][0])
+                    argv = ["download-model"] + (["--force"] if force else [])
+                    with patch.object(sys, "argv", argv), self.assertRaisesRegex(ValueError, "deletion-only"):
+                        download_main()
+                with self.assertRaisesRegex(ValueError, "deletion-only"):
+                    load_application_model(key)
+                network.assert_not_called()
+                staging.assert_not_called()
+
     def test_download_models_loads_config_when_omitted(self):
         config = {
-            "MODEL": "v1.1",
+            "MODEL": "v2",
             "LLM_MODEL": "qwen3.5-27b-5bit",
             "LLM_GEN": False,
         }
@@ -1328,12 +1434,12 @@ class DownloadIntegrityTests(unittest.TestCase):
             self.assertEqual(registered.call_count, 2)
             self.assertEqual(
                 downloaded,
-                ["kuri54/mlx-CYTOLONE-v1.1", "mlx-community/Qwen3.5-27B-5bit"],
+                ["kuri54/mlx-CYTOLONE-v2", "mlx-community/Qwen3.5-27B-5bit"],
             )
 
     def test_download_cli_defaults_to_only_application_model(self):
         config = {
-            "MODEL": "v1.1",
+            "MODEL": "v2",
             "LLM_MODEL": "qwen3.5-27b-5bit",
         }
         with patch.object(sys, "argv", ["download-model"]), patch(
@@ -1343,7 +1449,7 @@ class DownloadIntegrityTests(unittest.TestCase):
         ) as download:
             download_main()
 
-        download.assert_called_once_with("application", "v1.1", force=False)
+        download.assert_called_once_with("application", "v2", force=False)
 
     def test_download_cli_can_explicitly_download_one_llm_with_force(self):
         config = {
@@ -1372,7 +1478,7 @@ class DownloadIntegrityTests(unittest.TestCase):
     def test_download_status_final_yield_refreshes_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = {
-                "MODEL": "v1.1",
+                "MODEL": "v2",
             "LLM_MODEL": "qwen3.5-27b-5bit",
                 "LLM_GEN": False,
             }
@@ -1690,11 +1796,21 @@ class ModelManagementWiringTests(unittest.TestCase):
             if any(event == "change" for _, event in dependency["targets"])
         ]
         self.assertEqual(len(change_events), 2)
-        self.assertTrue(all(not event["inputs"] for event in change_events))
+        self.assertEqual(
+            [event["inputs"] for event in change_events],
+            [[management_components[1]._id], []],
+        )
         self.assertEqual(
             {event["outputs"][0] for event in change_events},
             {shared_confirm._id},
         )
+        selection_callback = management.fns[change_events[0]["id"]].fn
+        for key in ("v1.0", "v1.1", "v2"):
+            confirmation, force, download = selection_callback(key)
+            self.assertFalse(confirmation["value"])
+            self.assertFalse(force["value"])
+            self.assertEqual(force["interactive"], key == "v2")
+            self.assertEqual(download["interactive"], key == "v2")
         confirmation_components = [
             item
             for item in management.config["components"]

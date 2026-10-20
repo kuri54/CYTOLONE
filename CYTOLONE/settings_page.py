@@ -3,7 +3,6 @@ import gradio as gr
 from CYTOLONE.app_paths import config_path
 from CYTOLONE.default_config.config_manager import read_config, write_config
 from CYTOLONE.model import (
-    APP_MODEL_CHOICES,
     LLM_MODEL_CHOICES,
     LLM_MODEL_DISPLAY_CHOICES,
 )
@@ -56,8 +55,8 @@ def validate_settings(
 ):
     if language not in {"en", "ja"}:
         raise ValueError("LANGUAGE must be en or ja")
-    if model not in APP_MODEL_CHOICES:
-        raise ValueError(f"MODEL must be one of: {', '.join(APP_MODEL_CHOICES)}")
+    if model != "v2":
+        raise ValueError("MODEL must be v2")
     if llm_model not in LLM_MODEL_CHOICES:
         raise ValueError(f"LLM_MODEL must be one of: {', '.join(LLM_MODEL_CHOICES)}")
 
@@ -116,7 +115,7 @@ def build_settings_page():
         label="LANGUAGE",
     )
     model = gr.Dropdown(
-        choices=APP_MODEL_CHOICES,
+        choices=["v2"],
         value=values[1],
         label="MODEL",
     )
