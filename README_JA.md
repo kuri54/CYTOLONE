@@ -12,19 +12,21 @@ _**"Always by you side."**_
 |[English](./README.md)|
 
 ## ✨ 概要
-**CYTOLONE** (Cytology All-in-One) は、顕微鏡とAIをリアルタイムで連携させることで、**細胞検査士による子宮頸部細胞診のスクリーニングを支援するツール**です。
+**CYTOLONE** (Cytology All-in-One) は、顕微鏡とAIをリアルタイムで連携させることで、**細胞検査士による子宮頸部・尿細胞診を支援するツール**です。
 従来のAI支援システムで必要とされていた**WSI（全スライド画像）作成を不要**とし、iPhoneとApple Silicon Macだけで運用可能な低コスト・高速AI支援を実現しました。
 
 主な特徴:
-- **リアルタイム支援**：0.5秒以内に判定結果を表示
+- **リアルタイムの顕微鏡連携**：現在のカメラ視野を判定
 - **WSI不要・低コスト運用**：高価なスキャナーやGPUを必要としません
-- **階層ラベル学習による高精度判定**：異常、悪性、ベセスダ分類、診断まで対応
-- **ローカルLLM（大規模言語モデル）による補助情報（オプション）**
+- **検体別の階層分類**：子宮頸部・尿を選択し、共通のv2分類モデルを使用
+- **子宮頸部細胞診向けのローカルLLM（大規模言語モデル）による補助情報（オプション）**
+- **尿の判定に迷ったときの固定確認フロー**
 
 詳細は論文をご参照ください：
-[🔗 Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
 
-下図は実際の研究で使用した画像例です：
+- [Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology (Modern Pathology 2025)](https://doi.org/10.1016/j.modpat.2025.100817)
+- [A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels (Cytopathology 2026)](https://doi.org/10.1111/cyt.70140)
+
 <div align="center">
   <img src="/assets/sample_study_image.png" alt="Example Study Image" width="60%">
 </div>
@@ -35,9 +37,13 @@ _**"Always by you side."**_
   <img src="/assets/cytolone_app.png" alt="CYTOLONE App Image" width="100%">
 </div>
 
+<br>
+
 ## 💡 使用方法
 - このライブラリは**Apple Silicon MacとiPhoneのみ**に最適化されています。
 - Windowsやその他のOSは対応していません。その他のカメラデバイスは未検証です。
+
+<br>
 
 ### 💻 事前準備
 1. Apple Silicon Mac と iPhone を用意し、同一の Apple ID でログインします。
@@ -50,6 +56,8 @@ _**"Always by you side."**_
 <div align="center">
   <img src="/assets/setup.png" alt="Setup" width="80%">
 </div>
+
+<br>
 
 ### 📦 macOSアプリのインストール
 通常利用では、GitHub Releases から Apple Silicon 用 DMG を取得してください。
@@ -79,6 +87,8 @@ Apple Silicon Mac の macOS 13 以降に対応しています。
 [Appleの「開発元が不明なMacアプリを開く」](https://support.apple.com/ja-jp/guide/mac-help/-mh40616/mac)
 を確認してください。
 
+<br>
+
 ### 🚀 初回起動と2回目以降
 初回起動時は、文字と進捗だけのシンプルな英語ネイティブセットアップ画面が
 表示されます。CYTOLONEの実行に必要な環境を準備し、完了後に既定のブラウザで
@@ -92,7 +102,21 @@ CYTOLONE画面を開きます。モデルの取得は CYTOLONE ランチャー�
 最初に CYTOLONE ランチャー画面が開きます。ランチャーから CYTOLONE Main、
 scale-check、Settings、Model Management を開けます。ナビゲーションバーには
 Launcher タブだけが表示されます。各ページへはランチャー内のボタンから移動し、
-**CYTOLONE Main** でカメラを選択して **Analyze** を押すと現在の視野を判定できます。
+**CYTOLONE Main** でラジオボタンから **子宮頸部** または **尿** を選択し、
+カメラを選択して **Analyze** を押すと現在の視野を判定できます。
+
+<br>
+
+### 🔬 検体と分類カテゴリ
+両検体で共通のv2分類モデルを使用し、検体に応じた階層ラベルで判定します。
+
+- **子宮頸部**（初期選択）：Full、Anomaly、Malignancy、System（ベセスダ分類）、Diagnosis。
+- **尿**：Full、Anomaly、Malignancy、Diagnosis。Systemカテゴリはありません。
+
+尿ではLLM生成を無効にしています。**判定に迷ったとき** を押すと参考文献付きの
+固定確認フローが開きます。
+
+<br>
 
 ### 🔄 更新・終了・削除
 更新する場合は、新しい DMG を取得し、既存の `CYTOLONE.app` を新しいアプリに
@@ -113,11 +137,13 @@ CYTOLONE アイコンを右クリックして **Quit** を選択してくださ�
 インターネットに接続されていることを確認して再試行してください。解決しない場合は
 CYTOLONE を終了し、時間を置いて再度起動してください。
 
+<br>
+
 ### ⚙️ 設定
-ランチャーの **Settings** では、アプリモデル、使用するLLMモデル、言語、webcam画像サイズを
-選択できます。
-LLM出力は任意です。**CYTOLONE Main** で判定結果が条件を満たした場合に、簡潔な鑑別所見
-または詳細な鑑別所見を選びます。
+ランチャーの **Settings** では、アプリモデルはv2を使用し、使用するLLMモデル、言語、
+webcam画像サイズを選択できます。
+LLM出力は任意で、**子宮頸部のみ**利用できます。**CYTOLONE Main** で判定結果が条件を
+満たした場合に、簡潔な鑑別所見または詳細な鑑別所見を選びます。
 
 次の2種類から選べます。
 
@@ -129,18 +155,25 @@ LLM出力は任意です。**CYTOLONE Main** で判定結果が条件を満た�
 
 `WEBCAM_IMAGE_SIZE` はこのアプリで最も重要な設定です。設定方法は[こちらの手順](/CYTOLONE/scale_check/README_JA.md)を確認してください。
 
+<br>
+
 ### ⬇️ モデル管理
 ランチャーの **Model Management** を開くと、利用可能なアプリモデルとLLMを
 一覧で確認できます。選択状態、インストール状態、ローカル容量、ダウンロード容量、
 メモリ目安が表示されます。
 
-推奨メインモデルは Qwen3.5-27B-5bit です。使用するLLMモデルは **Settings** で選択し、
+両検体の分類モデルは `v2`（`kuri54/mlx-CYTOLONE-v2`）です。
+CYTOLONE v2では、既存のv1.0 / v1.1分類モデルは削除のみ可能で、使用・新規ダウンロード・
+再ダウンロードはできません。旧モデルの利用には、対応する **CYTOLONE 1.1.xアプリ** が必要です。
+この制限は、下記のLegacy LLMには適用されません。
+
+推奨LLMは Qwen3.5-27B-5bit です。使用するLLMモデルは **Settings** で選択し、
 アプリモデルとLLMのダウンロード・削除は **Model Management** で行います。
 
 LLM生成はユニファイドメモリ64GB以上のMacを推奨します。64GB未満では、生成が遅い、swapや
 不安定化が起きる、またはモデルが収まらない可能性があります。
 
-利用可能なモデル:
+利用可能なLLM:
 
 | キー | リポジトリ | ダウンロード容量 | ユニファイドメモリ目安 |
 |---|---|---:|---:|
@@ -151,19 +184,24 @@ LLM生成はユニファイドメモリ64GB以上のMacを推奨します。64GB
 上記の容量とメモリ値は検証済みの最低条件ではなく、暫定的な選択目安です。対象Macで選択モデルを
 確認してから生成してください。
 
-アプリモデルまたはLLMを1つ選び、それぞれの **Download** を押してください。
+v2アプリモデルまたはLLMを1つ選び、それぞれの **Download** を押してください。
 削除する場合は対象を選び、**Delete** を押して表示されたモデルを確認してください。全モデル削除の
 操作はありません。
-削除してもSettingsは変更されないため、利用前に再ダウンロードしてください。
+削除してもSettingsは変更されないため、v2または選択したLLMを再利用する場合は再ダウンロード
+してください。旧分類モデルはこのアプリでは再ダウンロードできません。
 
 モデルのダウンロードにはインターネット接続が必要です。必要なモデルの準備後は、
 ローカル・オフラインで利用できます。
+
+<br>
 
 ### 🌐 ネットワークとオフライン利用
 DMGの取得、アプリの初回セットアップ、モデルのダウンロードにはネットワークが必要です。
 CYTOLONEはバックグラウンド更新確認やネットワーク共有設定の変更を行いません。
 
 LLMの出力は鑑別所見を補助する情報であり、最終診断ではありません。
+
+<br>
 
 ### 📷 カメラの連携
 赤丸部分をクリックしてiPhoneと連携してください。
@@ -182,17 +220,11 @@ LLMの出力は鑑別所見を補助する情報であり、最終診断では�
 ⚠️ Warning:
 > 写真を撮る際の対物レンズは必ず×10にしてください。それ以外の倍率には対応していません。
 
-## 🔭 今後の開発計画
-以下の機能を今後のアップデートで追加予定です：
-
-- **赤丸による注視領域の指定機能**
-  画像上の任意の部位に赤丸をつけることで、モデルがその領域に注目して判定を行います。
-  _参考論文_: [What does CLIP know about a red circle? Visual prompt engineering for VLMs](https://arxiv.org/pdf/2304.06712)
-
-- **スクリーニングモード**
-  このモードをONにすると、顕微鏡観察中に常時「Anomaly」カテゴリの判定を自動実行します。
+<br>
 
 ## 🎉 Citation
+初版の子宮頸部細胞診に関する研究は、以下の論文で報告しています。
+
 ```
 @article{kurita2025cytolone,
          title={Whole Slide Imaging-Free Supporting Tool for Cytotechnologists in Cervical Cytology},
@@ -200,5 +232,19 @@ LLMの出力は鑑別所見を補助する情報であり、最終診断では�
          year={2025},
          journal={Modern Pathology},
          doi={10.1016/j.modpat.2025.100817}
+}
+```
+
+v2の子宮頸部・尿細胞診に関する研究は、[A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels](https://doi.org/10.1111/cyt.70140)です。
+2026年10月20日に *Cytopathology* でオンライン公開されました。
+
+```
+@article{kurita_cytolone_v2,
+         title={A WSI-Independent Inference Framework for Cervical and Urinary Cytology Using Hierarchical Labels},
+         author={Kurita, Yuki and Meguro, Shiori and Enomoto, Yasunori and Kawasaki, Hideya and Saitoh, Takeji and Suzuki, Makoto and Sakane, Junichi and Suzuki, Daisuke and Ishidou, Osamu and Shinmura, Kazuya and Iwashita, Toshihide},
+         year={2026},
+         journal={Cytopathology},
+         doi={10.1111/cyt.70140},
+         note={First published online October 20, 2026}
 }
 ```
